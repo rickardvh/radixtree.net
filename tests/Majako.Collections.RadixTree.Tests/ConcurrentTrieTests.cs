@@ -1,25 +1,10 @@
-﻿using System.Diagnostics;
-using FluentAssertions;
+﻿using FluentAssertions;
 
 namespace Majako.Collections.RadixTree.Tests
 {
     public class ConcurrentTrieTests
     {
         private ITree<int> _sut = new ConcurrentTrie<int>();
-
-        private static void ProfileAction(Action action)
-        {
-            var sw = new Stopwatch();
-            var memory = GC.GetTotalMemory(true) >> 20;
-            sw.Start();
-            
-            action.Invoke();
-
-            sw.Stop();
-            var delta = (GC.GetTotalMemory(true) >> 20) - memory;
-            Console.WriteLine("Elapsed time: {0:F}s", sw.ElapsedMilliseconds / 1000.0);
-            Console.WriteLine("Memory usage: {0:F}Mb", delta);
-        }
 
         [Fact]
         public void CanAddAndGetValue()
@@ -90,7 +75,7 @@ namespace Majako.Collections.RadixTree.Tests
                 _sut.Add(key, 1);
             _sut.Keys.Should().BeEquivalentTo(keys);
         }
-        
+
         [Fact]
         public void CanPrune()
         {
@@ -155,79 +140,40 @@ namespace Majako.Collections.RadixTree.Tests
             _sut.Keys.Should().BeEmpty();
         }
 
-        [Fact(Skip = "Not a test, used for profiling.")]
-        public void Profile()
-        {
-            ProfileAction(() =>
-            {
-                for (var i = 0; i < 1000000; i++)
-                    _sut.Add(Guid.NewGuid().ToString(), 0);
-            });
-        }
-
         [Fact]
         public void DoesNotBreakDuringParallelAddRemove()
         {
-            ProfileAction(() =>
+            Parallel.For(0, 1000, new ParallelOptions { MaxDegreeOfParallelism = 8 }, j =>
             {
-                Parallel.For(0, 1000, new ParallelOptions { MaxDegreeOfParallelism = 8 }, j =>
+                for (var i = 0; i < 1000; i++)
                 {
-                    for (var i = 0; i < 1000; i++)
-                    {
-                        var s = $"{i}-{j}";
-                        _sut.Add(s, i);
-                        _sut.TryGetValue(s, out var value).Should().BeTrue();
-                        value.Should().Be(i);
-                        _sut.Remove(s);
-                        _sut.TryGetValue(s, out _).Should().BeFalse();
-                    }
-                });
+                    var s = $"{i}-{j}";
+                    _sut.Add(s, i);
+                    _sut.TryGetValue(s, out var value).Should().BeTrue();
+                    value.Should().Be(i);
+                    _sut.Remove(s);
+                    _sut.TryGetValue(s, out _).Should().BeFalse();
+                }
             });
-            
+
             _sut.Keys.Count().Should().Be(0);
         }
 
         [Fact]
         public void DoesNotBreakDuringParallelAddPrune()
         {
-            ProfileAction(() =>
+            Parallel.For(0, 1000, new ParallelOptions { MaxDegreeOfParallelism = 8 }, j =>
             {
-                Parallel.For(0, 1000, new ParallelOptions { MaxDegreeOfParallelism = 8 }, j =>
+                for (var i = 0; i < 1000; i++)
                 {
-                    for (var i = 0; i < 1000; i++)
-                    {
-                        var s = $"{j}-{i}";
-                        _sut.Add(s, i);
-                    }
-                    _sut.Prune($"{j}-", out var st);
-                    st.Keys.Count().Should().Be(1000);
-                });
+                    var s = $"{j}-{i}";
+                    _sut.Add(s, i);
+                }
+                _sut.Prune($"{j}-", out var st);
+                st.Keys.Count().Should().Be(1000);
             });
-            
+
             _sut.Keys.Count().Should().Be(0);
-        }
-
-        [Fact(Skip = "Not a test, used for profiling.")]
-        public void ProfilePrune()
-        {
-            // insert
-            for (var i = 0; i < 10000; i++)
-                _sut.Add(Guid.NewGuid().ToString(), 0);
-
-            ProfileAction(() =>
-            {
-                Parallel.For(0, 1000, new ParallelOptions { MaxDegreeOfParallelism = 8 }, j =>
-                {
-                    for (var i = 0; i < 20; i++)
-                    {
-                        // insert
-                        _sut.Add(Guid.NewGuid().ToString(), 0);
-
-                        // remove by prefix
-                        _sut.Prune(Guid.NewGuid().ToString()[..5], out _);
-                    }
-                });
-            });
         }
     }
 }
