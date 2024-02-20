@@ -62,14 +62,13 @@ let ``Keys should be the same as the ones added`` (keys: Set<NonEmptyString>) =
 let ``A pruned subtree should contain only keys with the given prefix`` (items: TestItems, prefix: string) =
     let sut = makeTrie items
     let subTree  = sut.Prune(prefix)
-    subTree.Keys |> Seq.forall (fun k -> k.StartsWith prefix)
+    subTree.Keys |> Seq.forall (fun k -> startsWith k prefix)
 
 [<Property>]
-let ``Pruning should remove all keys with the given prefix`` (items: TestItems, prefix: UnicodeString) =
-    // note: "a".StartsWith "\u0017" mistakenly evaluates to true, so we use a UnicodeString here
+let ``Pruning should remove all keys with the given prefix`` (items: TestItems, prefix: string) =
     let sut = makeTrie items
-    sut.Prune(prefix.Get) |> ignore
-    sut.Keys |> Seq.forall (fun k -> not (k.StartsWith prefix.Get))
+    sut.Prune(prefix) |> ignore
+    sut.Keys |> Seq.forall (fun k -> not (startsWith k prefix))
 
 [<Property>]
 let ``Clearing the tree should remove all keys`` (items: TestItems) =
