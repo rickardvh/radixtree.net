@@ -1,4 +1,4 @@
-module ConcurrentTrieTests
+module Majako.Collections.RadixTree.Tests.ConcurrentTriePropertyTests
 
 open FsCheck
 open FsCheck.Xunit
@@ -44,6 +44,5 @@ let ``Keys should be the same as the ones added`` (keys: Set<NonEmptyString>) =
     let sut = ConcurrentTrie<int>()
     for key in keys do
         sut.Add(key.Get, 0)
-    let expected = keys |> Seq.map (fun k -> k.Get) |> Seq.sort
-    let actual = sut.Keys |> Seq.sort
-    Seq.forall2 (fun e a -> e = a) expected actual
+    let expected = keys |> Seq.map (fun k -> k.Get)
+    expected == sut.Keys
