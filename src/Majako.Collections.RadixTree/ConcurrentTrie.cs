@@ -35,6 +35,12 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
     {
     }
 
+    public ConcurrentTrie(IEnumerable<KeyValuePair<string, TValue>> items)
+    {
+        foreach (var (key, value) in items)
+            Add(key, value);
+    }
+
     #endregion
 
     #region Utilities
@@ -506,16 +512,15 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
     /// <returns>
     /// True if the prefix was successfully removed from the trie, otherwise false
     /// </returns>
-    public virtual bool Prune(string prefix, out IPrefixTree<TValue> subCollection)
+    public virtual IPrefixTree<TValue> Prune(string prefix)
     {
         var succeeded = SearchOrPrune(prefix, true, out var subtreeRoot);
-        subCollection = succeeded ? new ConcurrentTrie<TValue>(subtreeRoot) : default;
-        return succeeded;
+        return succeeded ? new ConcurrentTrie<TValue>(subtreeRoot) : new ConcurrentTrie<TValue>();
     }
 
     public override string ToString()
     {
-        return string.Join(Environment.NewLine, Search(string.Empty).Select(kv => $"{kv.Key} => {kv.Value}"));
+        return "{" + string.Join(", ", Search(string.Empty).Select(kv => $"\"{kv.Key}\": {kv.Value}")) + "}";
     }
 
     protected bool SearchOrPrune(string prefix, bool prune, out TrieNode subtreeRoot)

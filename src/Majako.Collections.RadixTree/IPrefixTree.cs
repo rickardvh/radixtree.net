@@ -54,14 +54,13 @@ public partial interface IPrefixTree<TValue>
     void Remove(string key);
 
     /// <summary>
-    /// Attempts to remove all items with keys starting with the specified prefix
+    /// Removes all items with keys starting with the specified prefix
     /// </summary>
     /// <param name="prefix">The prefix (case-sensitive) of the items to be deleted</param>
-    /// <param name="subCollection">The sub-collection containing all deleted items, if found</param>
     /// <returns>
-    /// True if the prefix was successfully removed from the collection, otherwise false
+    /// The sub-collection containing all deleted items (possibly empty)
     /// </returns>
-    bool Prune(string prefix, out IPrefixTree<TValue> subCollection);
+     IPrefixTree<TValue> Prune(string prefix);
 
     #endregion
 }
