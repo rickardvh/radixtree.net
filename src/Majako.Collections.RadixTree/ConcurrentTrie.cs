@@ -513,6 +513,11 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
         return succeeded;
     }
 
+    public override string ToString()
+    {
+        return string.Join(Environment.NewLine, Search(string.Empty).Select(kv => $"{kv.Key} => {kv.Value}"));
+    }
+
     protected bool SearchOrPrune(string prefix, bool prune, out TrieNode subtreeRoot)
     {
         ArgumentNullException.ThrowIfNull(prefix);

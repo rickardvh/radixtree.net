@@ -10,6 +10,7 @@
   <ItemGroup>
     <Compile Include="TestUtils.fs" />
     <Compile Include="ConcurrentTrieTests.fs" />
+    <Compile Include="ConcurrentTriePropertyTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
