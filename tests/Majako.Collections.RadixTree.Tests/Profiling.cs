@@ -3,17 +3,12 @@ using Xunit.Abstractions;
 
 namespace Majako.Collections.RadixTree.Tests
 {
-    public class Profiling
-    {
-        private readonly ITestOutputHelper _output;
-        private readonly ITree<int> _sut = new ConcurrentTrie<int>();
+    public class Profiling(ITestOutputHelper output)
+  {
+        private readonly ITestOutputHelper _output = output;
+        private readonly IPrefixTree<int> _sut = new ConcurrentTrie<int>();
 
-        public Profiling(ITestOutputHelper output)
-        {
-            _output = output;
-        }
-
-        private void ProfileAction(Action action)
+    private void ProfileAction(Action action)
         {
             var sw = new Stopwatch();
             var memory = GC.GetTotalMemory(true) >> 20;

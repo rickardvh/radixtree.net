@@ -1,0 +1,36 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{9B508FD3-D5FB-40E7-82EE-D40D33BDBFFE}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Majako.Collections.RadixTree", "src\Majako.Collections.RadixTree\Majako.Collections.RadixTree.csproj", "{237D8191-49C8-4FFC-8888-225E91CE361E}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{AA9E66C2-0024-4BC5-B84A-C5EB801BE48D}"
+EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Majako.Collections.RadixTree.Tests", "tests\Majako.Collections.RadixTree.Tests\Majako.Collections.RadixTree.Tests.fsproj", "{9D296B5C-D9DC-4589-84FB-44051BD829BE}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{237D8191-49C8-4FFC-8888-225E91CE361E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{237D8191-49C8-4FFC-8888-225E91CE361E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{237D8191-49C8-4FFC-8888-225E91CE361E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{237D8191-49C8-4FFC-8888-225E91CE361E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9D296B5C-D9DC-4589-84FB-44051BD829BE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9D296B5C-D9DC-4589-84FB-44051BD829BE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9D296B5C-D9DC-4589-84FB-44051BD829BE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9D296B5C-D9DC-4589-84FB-44051BD829BE}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{237D8191-49C8-4FFC-8888-225E91CE361E} = {9B508FD3-D5FB-40E7-82EE-D40D33BDBFFE}
+		{9D296B5C-D9DC-4589-84FB-44051BD829BE} = {AA9E66C2-0024-4BC5-B84A-C5EB801BE48D}
+	EndGlobalSection
+EndGlobal
