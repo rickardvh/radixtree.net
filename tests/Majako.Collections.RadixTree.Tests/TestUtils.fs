@@ -4,9 +4,9 @@ module Majako.Collections.RadixTree.Tests.TestUtils
 open Swensen.Unquote.Assertions
 
 /// Assertion comparing two sequences for equality, ignoring order
-let inline (==!) xs ys = (Seq.sort xs |> Seq.toList) =! (Seq.sort ys |> Seq.toList)
+let (==!) xs ys = (Seq.sort xs |> Seq.toList) =! (Seq.sort ys |> Seq.toList)
 
-let inline (==) xs ys =
+let (==) xs ys =
     let xs' = Seq.sort xs |> Seq.toList
     let ys' = Seq.sort ys |> Seq.toList
     xs' = ys'
@@ -17,8 +17,6 @@ let startsWith (xs: seq<'a>) (prefix: seq<'a>) =
     use xsEnumerator = xs.GetEnumerator()
     use prefixEnumerator = prefix.GetEnumerator()
     let mutable state = true
-
     while (state && prefixEnumerator.MoveNext()) do
         state <- xsEnumerator.MoveNext() && xsEnumerator.Current = prefixEnumerator.Current
-
     state

@@ -43,6 +43,7 @@ let ``Does not block while enumerating`` () =
     let sut = ConcurrentTrie<int>()
     sut.Add("a", 0)
     sut.Add("ab", 0)
+
     for item in sut.Keys do
         sut.Remove(item) |> ignore
 
@@ -59,7 +60,7 @@ let ``Can remove value`` () =
     sut.Remove("ab")
     let found, _ = sut.TryGetValue("ab")
     test <@ not found @>
-    sut.Keys ==! ["abc"; "a"; "b"; "aa"; "abb"; "bbb"]
+    sut.Keys ==! [ "abc"; "a"; "b"; "aa"; "abb"; "bbb" ]
     sut.Remove("ab")
     sut.Remove("bb")
     let found, _ = sut.TryGetValue("b")
@@ -68,16 +69,18 @@ let ``Can remove value`` () =
     test <@ found @>
 
     let sut = sut.Prune("b")
-    sut.Keys ==! ["b"; "bbb"]
+    sut.Keys ==! [ "b"; "bbb" ]
     sut.Remove("b")
-    sut.Keys ==! ["bbb"]
+    sut.Keys ==! [ "bbb" ]
 
 [<Fact>]
 let ``Can get keys`` () =
     let sut = ConcurrentTrie<int>()
-    let keys = ["a"; "b"; "abc"]
+    let keys = [ "a"; "b"; "abc" ]
+
     for key in keys do
         sut.Add(key, 1)
+
     sut.Keys ==! keys
 
 [<Fact>]
@@ -92,8 +95,8 @@ let ``Can prune`` () =
     sut.Add("abc", 1)
     sut.Add("abb", 1)
     let subtree = sut.Prune("ab")
-    subtree.Keys ==! ["ab"; "abc"; "abb"]
-    sut.Keys ==! ["a"; "b"; "aa"; "bba"; "bbb"]
+    subtree.Keys ==! [ "ab"; "abc"; "abb" ]
+    sut.Keys ==! [ "a"; "b"; "aa"; "bba"; "bbb" ]
 
 [<Fact>]
 let ``Can prune all`` () =
@@ -107,7 +110,7 @@ let ``Can prune all`` () =
     sut.Add("abc", 1)
     sut.Add("abb", 1)
     let subtree = sut.Prune("")
-    subtree.Keys ==! ["a"; "b"; "ab"; "aa"; "abc"; "abb"; "bba"; "bbb"]
+    subtree.Keys ==! [ "a"; "b"; "ab"; "aa"; "abc"; "abb"; "bba"; "bbb" ]
     sut.Keys ==! []
 
 [<Fact>]
@@ -123,7 +126,7 @@ let ``Can prune none`` () =
     sut.Add("abb", 1)
     let subtree = sut.Prune("c")
     subtree.Keys ==! []
-    sut.Keys ==! ["a"; "b"; "ab"; "aa"; "abc"; "abb"; "bba"; "bbb"]
+    sut.Keys ==! [ "a"; "b"; "ab"; "aa"; "abc"; "abb"; "bba"; "bbb" ]
 
 [<Fact>]
 let ``Can search`` () =
@@ -136,8 +139,8 @@ let ``Can search`` () =
     sut.Add("aa", 1)
     sut.Add("abc", 1)
     sut.Add("abb", 1)
-    sut.Search("ab") |> Seq.map (fun kv -> kv.Key) ==! ["ab"; "abc"; "abb"]
-    sut.Search("b") |> Seq.map (fun kv -> kv.Key) ==! ["b"; "bba"; "bbb"]
+    sut.Search("ab") |> Seq.map (fun kv -> kv.Key) ==! [ "ab"; "abc"; "abb" ]
+    sut.Search("b") |> Seq.map (fun kv -> kv.Key) ==! [ "b"; "bba"; "bbb" ]
     sut.Search("c") |> Seq.map (fun kv -> kv.Key) ==! []
 
 [<Fact>]
@@ -159,7 +162,7 @@ let ``Does not break during parallel add remove`` () =
     let sut = ConcurrentTrie<int>()
 
     let addRemove j =
-        for i in 1 .. 1000 do
+        for i in 1..1000 do
             let key = $"{i}-{j}"
             sut.Add(key, i)
             let found, value = sut.TryGetValue(key)
@@ -169,7 +172,7 @@ let ``Does not break during parallel add remove`` () =
             let found, _ = sut.TryGetValue(key)
             test <@ not found @>
 
-    Array.Parallel.iter addRemove [| 1 .. 1000 |]
+    Array.Parallel.iter addRemove [| 1..1000 |]
 
     test <@ Seq.isEmpty sut.Keys @>
 
@@ -178,11 +181,12 @@ let ``Does not break during parallel add prune`` () =
     let sut = ConcurrentTrie<int>()
 
     let addPrune j =
-        for i in 1 .. 1000 do
+        for i in 1..1000 do
             sut.Add($"{j}-{i}", i)
+
         let subtree = sut.Prune($"{j}-")
         Seq.length subtree.Keys =! 1000
 
-    Array.Parallel.iter addPrune [| 1 .. 1000 |]
+    Array.Parallel.iter addPrune [| 1..1000 |]
 
     test <@ Seq.isEmpty sut.Keys @>
