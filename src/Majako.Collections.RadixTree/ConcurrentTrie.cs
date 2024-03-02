@@ -1,4 +1,5 @@
-﻿using System.Runtime.CompilerServices;
+﻿using System.Collections;
+using System.Runtime.CompilerServices;
 
 namespace Majako.Collections.RadixTree;
 
@@ -593,6 +594,59 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
         return false;
     }
 
+    public bool ContainsKey(string key)
+    {
+        return Find(key, _root, out _);
+    }
+
+    bool IDictionary<string, TValue>.Remove(string key)
+    {
+        if (string.IsNullOrEmpty(key))
+            throw new ArgumentException($"'{nameof(key)}' cannot be null or empty.", nameof(key));
+
+        Remove(_root, key);
+        return true;    // TODO: return false if the key was not found
+    }
+
+    public void Add(KeyValuePair<string, TValue> item)
+    {
+        Add(item.Key, item.Value);
+    }
+
+    public bool Contains(KeyValuePair<string, TValue> item)
+    {
+        return Find(item.Key, _root, out var node)
+            && node.TryGetValue(out var value)
+            && EqualityComparer<TValue>.Default.Equals(value, item.Value);
+    }
+
+    public void CopyTo(KeyValuePair<string, TValue>[] array, int arrayIndex)
+    {
+        foreach (var kv in Search(string.Empty))
+            array[arrayIndex++] = kv;
+    }
+
+    public bool Remove(KeyValuePair<string, TValue> item)
+    {
+        if (Find(item.Key, _root, out var node) && node.TryGetValue(out var value) && EqualityComparer<TValue>.Default.Equals(value, item.Value))
+        {
+            Remove(item.Key);
+            return true;
+        }
+
+        return false;
+    }
+
+    public IEnumerator<KeyValuePair<string, TValue>> GetEnumerator()
+    {
+        return Search(string.Empty).GetEnumerator();
+    }
+
+    IEnumerator IEnumerable.GetEnumerator()
+    {
+        return GetEnumerator();
+    }
+
     #endregion
 
     #region Properties
@@ -601,6 +655,20 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
     /// Gets a collection that contains the keys in the <see cref="ConcurrentTrie{TValue}" />
     /// </summary>
     public IEnumerable<string> Keys => Search(string.Empty).Select(t => t.Key);
+
+    ICollection<string> IDictionary<string, TValue>.Keys => Keys.ToList();
+
+    public ICollection<TValue> Values => Search(string.Empty).Select(t => t.Value).ToList();
+
+    public int Count => Search(string.Empty).Count();
+
+    public bool IsReadOnly => false;
+
+    public TValue this[string key]
+    {
+        get => Find(key, _root, out var node) && node.TryGetValue(out var value) ? value : throw new KeyNotFoundException();
+        set => Add(key, value);
+    }
 
     #endregion
 
