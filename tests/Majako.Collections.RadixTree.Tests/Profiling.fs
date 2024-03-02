@@ -6,6 +6,9 @@ open Majako.Collections.RadixTree
 open System
 open Xunit.Abstractions
 
+[<Literal>]
+let SKIP = "Profiling disabled" // set to null to enable profiling
+
 type Scenarios(output: ITestOutputHelper) =
     let profile f =
         let sw = Stopwatch()
@@ -17,8 +20,8 @@ type Scenarios(output: ITestOutputHelper) =
         output.WriteLine(sprintf "Elapsed time: %.2f s" (float sw.ElapsedMilliseconds / 1000.0))
         output.WriteLine(sprintf "Memory usage: %.2f MB" (float delta))
 
-    [<Fact>]
-    let ``Profile``() =
+    [<Fact(Skip = SKIP)>]
+    let ``Profile`` () =
         let sut = ConcurrentTrie<int>()
 
         let add _ =
