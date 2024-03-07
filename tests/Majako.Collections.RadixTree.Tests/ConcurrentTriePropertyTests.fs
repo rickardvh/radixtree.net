@@ -41,19 +41,18 @@ let ``Removing one value should decrease count by exactly 1 if the key is in the
     let sut = makeTrie items
     let countBefore = sut.Count
     let containsKeyBefore = sut.ContainsKey(key.Get)
-    sut.Remove(key.Get)
+    sut.Remove(key.Get) |> ignore
     let countAfter = sut.Count
     not containsKeyBefore && countBefore = countAfter || containsKeyBefore && countBefore - 1 = countAfter
 
 [<Property>]
 let ``Remove should be idempotent`` (items: TestItems, key: NonEmptyString) =
     let sut = makeTrie items
-    sut.Remove(key.Get)
+    sut.Remove(key.Get) |> ignore
     let countBefore = sut.Count
-    sut.Remove(key.Get)
+    sut.Remove(key.Get) |> ignore
     let countAfter = sut.Count
     countBefore = countAfter
-
 
 [<Property>]
 let ``Add should be idempotent`` (items: TestItems, key: NonEmptyString, value: int) =
@@ -61,6 +60,15 @@ let ``Add should be idempotent`` (items: TestItems, key: NonEmptyString, value: 
     sut.Add(key.Get, value)
     let countBefore = sut.Count
     sut.Add(key.Get, value)
+    let countAfter = sut.Count
+    countBefore = countAfter
+
+[<Property>]
+let ``Prune should be idempotent`` (items: TestItems, key: NonEmptyString) =
+    let sut = makeTrie items
+    sut.Prune(key.Get) |> ignore
+    let countBefore = sut.Count
+    sut.Prune(key.Get) |> ignore
     let countAfter = sut.Count
     countBefore = countAfter
 
@@ -73,14 +81,14 @@ let ``A key/value pair should not exist after being added and removed``
     ) =
     let sut = makeTrie items
     sut.Add(key.Get, value)
-    sut.Remove(key.Get)
+    sut.Remove(key.Get) |> ignore
     let found, _ = sut.TryGetValue(key.Get)
     not found
 
 [<Property>]
 let ``A key/value pair should not exist after being removed`` (items: TestItems, key: NonEmptyString) =
     let sut = makeTrie items
-    sut.Remove(key.Get)
+    sut.Remove(key.Get) |> ignore
     let found, _ = sut.TryGetValue(key.Get)
     not found
 
@@ -93,7 +101,7 @@ let ``A key/value pair should exist after being added and removed and added agai
     ) =
     let sut = makeTrie items
     sut.Add(key.Get, value)
-    sut.Remove(key.Get)
+    sut.Remove(key.Get) |> ignore
     sut.Add(key.Get, value)
     let found, actual = sut.TryGetValue(key.Get)
     found && actual = value
@@ -108,7 +116,7 @@ let ``A key/value pair should exist after being added and removed and added agai
     ) =
     let sut = makeTrie items
     sut.Add(key.Get, value)
-    sut.Remove(key.Get)
+    sut.Remove(key.Get) |> ignore
     sut.Add(key.Get, value2)
     let found, actual = sut.TryGetValue(key.Get)
     found && actual = value2

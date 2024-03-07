@@ -70,12 +70,12 @@ let ``Can remove value`` () =
     sut.Add("aa", 1)
     sut.Add("abc", 1)
     sut.Add("abb", 1)
-    sut.Remove("ab")
+    sut.Remove("ab") |> ignore
     let found, _ = sut.TryGetValue("ab")
     test <@ not found @>
     sut.Keys ==! [ "abc"; "a"; "b"; "aa"; "abb"; "bbb" ]
-    sut.Remove("ab")
-    sut.Remove("bb")
+    sut.Remove("ab") |> ignore
+    sut.Remove("bb") |> ignore
     let found, _ = sut.TryGetValue("b")
     test <@ found @>
     let found, _ = sut.TryGetValue("bbb")
@@ -181,7 +181,7 @@ let ``Does not break during parallel add remove`` () =
             let found, value = sut.TryGetValue(key)
             test <@ found @>
             value =! i
-            sut.Remove(key)
+            sut.Remove(key) |> ignore
             let found, _ = sut.TryGetValue(key)
             test <@ not found @>
 
