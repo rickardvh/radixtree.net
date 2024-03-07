@@ -35,8 +35,7 @@ let ``Adding one value should increase count by exactly 1 if the key is not in t
 let ``Removing one value should decrease count by exactly 1 if the key is in the trie, and 0 otherwise``
     (
         items: TestItems,
-        key: NonEmptyString,
-        value: int
+        key: NonEmptyString
     ) =
     let sut = makeTrie items
     let countBefore = sut.Count
