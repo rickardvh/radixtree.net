@@ -251,7 +251,7 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
         return GetOrAddNode(key, value, overwrite);
     }
 
-    protected virtual void Remove(TrieNode subtreeRoot, ReadOnlySpan<char> key)
+    protected virtual bool Remove(TrieNode subtreeRoot, ReadOnlySpan<char> key)
     {
         TrieNode node = null, grandparent = null;
         var parent = subtreeRoot;
@@ -268,7 +268,7 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
                 try
                 {
                     if (!parent.Children.TryGetValue(c, out node))
-                        return;
+                        return false;
                 }
                 finally
                 {
@@ -286,11 +286,11 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
                         break;
 
                     // the node is either already removed, or it is a branching node
-                    return;
+                    return false;
                 }
 
                 if (k < label.Length)
-                    return;
+                    return false;
 
                 i += label.Length;
                 grandparent = parent;
@@ -303,7 +303,7 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
         }
 
         if (node == null)
-            return;
+            return false;
 
         // if we need to delete a node, the tree has to be restructured to remove empty leaves or merge
         // single children with branching node parents, and other threads may be currently on these nodes
@@ -325,7 +325,7 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
             {
                 // another thread has written a value to the node while we were waiting
                 if (node.HasValue)
-                    return;
+                    return false;
 
                 var c = node.Label[0];
                 var nChildren = node.Children.Count;
@@ -338,7 +338,7 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
                     {
                         // was removed or replaced by another thread
                         if (!parent.Children.TryGetValue(c, out var n) || n != node)
-                            return;
+                            return false;
 
                         parent.Children.Remove(c);
                         node.Delete();
@@ -356,7 +356,7 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
                                 c = parent.Label[0];
 
                                 if (!grandparent.Children.TryGetValue(c, out n) || n != parent || parent.HasValue)
-                                    return;
+                                    return false;
 
                                 var child = parent.Children.First().Value;
                                 grandparent.Children[c] = new TrieNode(parent.Label + child.Label, child);
@@ -383,7 +383,7 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
                     {
                         // was removed or replaced by another thread
                         if (!parent.Children.TryGetValue(c, out var n) || n != node)
-                            return;
+                            return false;
 
                         var child = node.Children.FirstOrDefault().Value;
                         parent.Children[c] = new TrieNode(node.Label + child.Label, child);
@@ -407,6 +407,7 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
         {
             _structureLock.ExitWriteLock();
         }
+        return true;
     }
 
     #endregion
@@ -604,8 +605,7 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
         if (string.IsNullOrEmpty(key))
             throw new ArgumentException($"'{nameof(key)}' cannot be null or empty.", nameof(key));
 
-        Remove(_root, key);
-        return true;    // TODO: return false if the key was not found
+        return Remove(_root, key);
     }
 
     public void Add(KeyValuePair<string, TValue> item)
@@ -628,13 +628,10 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
 
     public bool Remove(KeyValuePair<string, TValue> item)
     {
-        if (Find(item.Key, _root, out var node) && node.TryGetValue(out var value) && EqualityComparer<TValue>.Default.Equals(value, item.Value))
-        {
-            Remove(item.Key);
-            return true;
-        }
-
-        return false;
+        return Find(item.Key, _root, out var node)
+            && node.TryGetValue(out var value)
+            && EqualityComparer<TValue>.Default.Equals(value, item.Value)
+            && Remove(_root, item.Key);
     }
 
     public IEnumerator<KeyValuePair<string, TValue>> GetEnumerator()
@@ -683,7 +680,7 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
 
         // used to avoid keeping a separate boolean flag that would use another byte per node
         protected static readonly ValueWrapper _deleted = new(default);
-        protected volatile ValueWrapper? _value;
+        protected volatile ValueWrapper _value;
 
         #endregion
         #region Ctor

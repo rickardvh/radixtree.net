@@ -7,7 +7,8 @@ open System
 open Xunit.Abstractions
 
 [<Literal>]
-let SKIP = "Profiling disabled" // set to null to enable profiling
+let SKIP: string = "Profiling disabled" // set to null to enable profiling
+// let SKIP: string = null // set to null to enable profiling
 
 type Scenarios(output: ITestOutputHelper) =
     let profile f =
@@ -25,7 +26,23 @@ type Scenarios(output: ITestOutputHelper) =
         let sut = ConcurrentTrie<int>()
 
         let add _ =
-            for _ = 1 to 1000 do
+            for _ = 1 to 10000 do
                 sut.Add(Guid.NewGuid().ToString(), 0)
 
         profile <| fun () -> Array.Parallel.iter add [| 1..1000 |]
+        // printfn "Collisions: %d" sut.Counter
+
+    [<Fact(Skip = SKIP)>]
+    let ``Profile add/remove`` () =
+        let sut = ConcurrentTrie<int>()
+
+        let key(i, j) = $"{i}-{j}"
+
+        let addRemove j =
+            for i in 1..10000 do
+                sut.Add(key(i, j), i)
+            for i in 1..10000 do
+                sut.Remove(key(i, j)) |> ignore
+
+        profile <| fun () -> Array.Parallel.iter addRemove [| 1..1000 |]
+        // printfn "Collisions: %d" sut.Counter
