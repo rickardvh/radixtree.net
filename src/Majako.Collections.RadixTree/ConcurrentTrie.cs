@@ -1,4 +1,5 @@
-﻿using System.Runtime.CompilerServices;
+﻿using System.Collections;
+using System.Runtime.CompilerServices;
 
 namespace Majako.Collections.RadixTree;
 
@@ -15,18 +16,7 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
 
     #endregion
 
-    #region Ctor
-
-    /// <summary>
-    /// Initializes a new instance of <see cref="ConcurrentTrie{TValue}" />
-    /// </summary>
-    protected ConcurrentTrie(TrieNode subtreeRoot)
-    {
-        if (subtreeRoot.Label.Length == 0)
-            _root = subtreeRoot;
-        else
-            _root.Children[subtreeRoot.Label[0]] = subtreeRoot;
-    }
+    #region Constructors
 
     /// <summary>
     /// Initializes a new empty instance of <see cref="ConcurrentTrie{TValue}" />
@@ -35,15 +25,195 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
     {
     }
 
+    /// <summary>
+    /// Initializes a new instance of <see cref="ConcurrentTrie{TValue}" /> with the given items
+    /// </summary>
+    /// <param name="items">The items to be added to the trie</param>
     public ConcurrentTrie(IEnumerable<KeyValuePair<string, TValue>> items)
     {
         foreach (var (key, value) in items)
             Add(key, value);
     }
 
+    /// <summary>
+    /// Initializes a new instance of <see cref="ConcurrentTrie{TValue}" /> with the given subtree root
+    /// </summary>
+    /// <param name="subtreeRoot">The root of the subtree</param>
+    protected ConcurrentTrie(TrieNode subtreeRoot)
+    {
+        if (subtreeRoot.Label.Length == 0)
+            _root = subtreeRoot;
+        else
+            _root.Children[subtreeRoot.Label[0]] = subtreeRoot;
+    }
+
     #endregion
 
-    #region Utilities
+    #region Properties
+
+    /// <inheritdoc/>
+    public IEnumerable<string> Keys => this.Select(t => t.Key);
+
+    /// <inheritdoc/>
+    public IEnumerable<TValue> Values => this.Select(t => t.Value);
+
+    /// <inheritdoc/>
+    ICollection<string> IDictionary<string, TValue>.Keys => Keys.ToList();
+
+    /// <inheritdoc/>
+    ICollection<TValue> IDictionary<string, TValue>.Values => Values.ToList();
+
+    /// <inheritdoc/>
+    public int Count => this.Count();
+
+    /// <inheritdoc/>
+    public bool IsReadOnly => false;
+
+    #endregion
+
+    #region Indexers
+
+    /// <inheritdoc/>
+    public TValue this[string key]
+    {
+        get => TryGetValue(key, out var value) ? value : throw new KeyNotFoundException();
+        set => Add(key, value);
+    }
+
+    #endregion
+
+    #region Methods
+
+    #region Public
+
+    /// <inheritdoc/>
+    public override string ToString()
+    {
+        return "{" + string.Join(", ", this.Select(kv => $"\"{kv.Key}\": {kv.Value}")) + "}";
+    }
+
+    /// <inheritdoc/>
+    public virtual bool TryGetValue(string key, out TValue value)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(key, nameof(key));
+
+        value = default;
+
+        return Find(key, _root, out var node) && node.TryGetValue(out value);
+    }
+
+    /// <inheritdoc/>
+    public virtual void Add(string key, TValue value)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(key, nameof(key));
+
+        GetOrAddNode(key, value, true);
+    }
+
+    /// <inheritdoc/>
+    public virtual void Clear()
+    {
+        _root = new TrieNode();
+    }
+
+    /// <inheritdoc/>
+    public bool ContainsKey(string key)
+    {
+        return TryGetValue(key, out _);
+    }
+
+    /// <inheritdoc/>
+    public bool Remove(string key)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(key, nameof(key));
+
+        return Remove(_root, key);
+    }
+
+    /// <inheritdoc/>
+    public void Add(KeyValuePair<string, TValue> item)
+    {
+        Add(item.Key, item.Value);
+    }
+
+    /// <inheritdoc/>
+    public bool Contains(KeyValuePair<string, TValue> item)
+    {
+        return TryGetValue(item.Key, out var value)
+            && EqualityComparer<TValue>.Default.Equals(value, item.Value);
+    }
+
+    /// <inheritdoc/>
+    public void CopyTo(KeyValuePair<string, TValue>[] array, int arrayIndex)
+    {
+        foreach (var kv in this)
+            array[arrayIndex++] = kv;
+    }
+
+    /// <inheritdoc/>
+    public bool Remove(KeyValuePair<string, TValue> item)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(item.Key, nameof(item.Key));
+
+        return Remove(_root, item.Key, new ValueWrapper(item.Value));
+    }
+
+    /// <inheritdoc/>
+    public IEnumerator<KeyValuePair<string, TValue>> GetEnumerator()
+    {
+        return Search(string.Empty).GetEnumerator();
+    }
+
+    /// <inheritdoc/>
+    IEnumerator IEnumerable.GetEnumerator()
+    {
+        return GetEnumerator();
+    }
+
+    /// <inheritdoc/>
+    public virtual IEnumerable<KeyValuePair<string, TValue>> Search(string prefix)
+    {
+        ArgumentNullException.ThrowIfNull(prefix);
+
+        if (!SearchOrPrune(prefix, false, out var node))
+            return [];
+
+        // depth-first traversal
+        IEnumerable<KeyValuePair<string, TValue>> traverse(TrieNode n, string s)
+        {
+            if (n.TryGetValue(out var value))
+                yield return new KeyValuePair<string, TValue>(s, value);
+
+            var nLock = GetLock(n);
+            nLock.EnterReadLock();
+            List<TrieNode> children;
+
+            try
+            {
+                // we can't know what is done during enumeration, so we need to make a copy of the children
+                children = [.. n.Children.Values];
+            }
+            finally
+            {
+                nLock.ExitReadLock();
+            }
+
+            foreach (var child in children)
+                foreach (var kv in traverse(child, s + child.Label))
+                    yield return kv;
+        }
+
+        return traverse(node, node.Label);
+    }
+
+    /// <inheritdoc/>
+    public virtual IPrefixTree<TValue> Prune(string prefix)
+    {
+        var succeeded = SearchOrPrune(prefix, true, out var subtreeRoot);
+        return succeeded ? new ConcurrentTrie<TValue>(subtreeRoot) : [];
+    }
+
+    #endregion
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     protected static int GetCommonPrefixLength(ReadOnlySpan<char> s1, ReadOnlySpan<char> s2)
@@ -250,7 +420,14 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
         return GetOrAddNode(key, value, overwrite);
     }
 
-    protected virtual void Remove(TrieNode subtreeRoot, ReadOnlySpan<char> key)
+    /// <summary>
+    /// Removes a node from the trie, if found
+    /// </summary>
+    /// <param name="subtreeRoot">The root of the subtree from which to remove the node</param>
+    /// <param name="key">The key to remove</param>
+    /// <param name="valueWrapper">(Optional) The value to remove. If specified, the node will only be removed if its value matches the wrapped value</param>
+    /// <returns></returns>
+    protected virtual bool Remove(TrieNode subtreeRoot, ReadOnlySpan<char> key, ValueWrapper valueWrapper = null)
     {
         TrieNode node = null, grandparent = null;
         var parent = subtreeRoot;
@@ -267,7 +444,7 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
                 try
                 {
                     if (!parent.Children.TryGetValue(c, out node))
-                        return;
+                        return false;
                 }
                 finally
                 {
@@ -280,16 +457,21 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
                 // is this the node we're looking for?
                 if (k == label.Length && k == key.Length - i)
                 {
+                    if (valueWrapper != null)
+                    {
+                        if (!node.TryGetValue(out var value) || !EqualityComparer<TValue>.Default.Equals(value, valueWrapper.Value))
+                            return false;
+                    }
                     // this node has to be removed or merged
                     if (node.TryRemoveValue(out _))
                         break;
 
                     // the node is either already removed, or it is a branching node
-                    return;
+                    return false;
                 }
 
                 if (k < label.Length)
-                    return;
+                    return false;
 
                 i += label.Length;
                 grandparent = parent;
@@ -302,7 +484,7 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
         }
 
         if (node == null)
-            return;
+            return false;
 
         // if we need to delete a node, the tree has to be restructured to remove empty leaves or merge
         // single children with branching node parents, and other threads may be currently on these nodes
@@ -324,7 +506,7 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
             {
                 // another thread has written a value to the node while we were waiting
                 if (node.HasValue)
-                    return;
+                    return false;
 
                 var c = node.Label[0];
                 var nChildren = node.Children.Count;
@@ -337,7 +519,7 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
                     {
                         // was removed or replaced by another thread
                         if (!parent.Children.TryGetValue(c, out var n) || n != node)
-                            return;
+                            return false;
 
                         parent.Children.Remove(c);
                         node.Delete();
@@ -355,7 +537,7 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
                                 c = parent.Label[0];
 
                                 if (!grandparent.Children.TryGetValue(c, out n) || n != parent || parent.HasValue)
-                                    return;
+                                    return false;
 
                                 var child = parent.Children.First().Value;
                                 grandparent.Children[c] = new TrieNode(parent.Label + child.Label, child);
@@ -382,7 +564,7 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
                     {
                         // was removed or replaced by another thread
                         if (!parent.Children.TryGetValue(c, out var n) || n != node)
-                            return;
+                            return false;
 
                         var child = node.Children.FirstOrDefault().Value;
                         parent.Children[c] = new TrieNode(node.Label + child.Label, child);
@@ -406,121 +588,7 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
         {
             _structureLock.ExitWriteLock();
         }
-    }
-
-    #endregion
-
-    #region Methods
-
-    /// <summary>
-    /// Attempts to get the value associated with the specified key
-    /// </summary>
-    /// <param name="key">The key of the item to get (case-sensitive)</param>
-    /// <param name="value">The value associated with <paramref name="key"/>, if found</param>
-    /// <returns>
-    /// True if the key was found, otherwise false
-    /// </returns>
-    public virtual bool TryGetValue(string key, out TValue value)
-    {
-        ArgumentNullException.ThrowIfNull(key);
-
-        value = default;
-
-        return Find(key, _root, out var node) && node.TryGetValue(out value);
-    }
-
-    /// <summary>
-    /// Adds a key-value pair to the trie
-    /// </summary>
-    /// <param name="key">The key of the new item (case-sensitive)</param>
-    /// <param name="value">The value to be associated with <paramref name="key"/></param>
-    public virtual void Add(string key, TValue value)
-    {
-        if (string.IsNullOrEmpty(key))
-            throw new ArgumentException($"'{nameof(key)}' cannot be null or empty.", nameof(key));
-
-        GetOrAddNode(key, value, true);
-    }
-
-    /// <summary>
-    /// Clears the trie
-    /// </summary>
-    public virtual void Clear()
-    {
-        _root = new TrieNode();
-    }
-
-    /// <summary>
-    /// Gets all key-value pairs for keys starting with the given prefix
-    /// </summary>
-    /// <param name="prefix">The prefix (case-sensitive) to search for</param>
-    /// <returns>
-    /// All key-value pairs for keys starting with <paramref name="prefix"/>
-    /// </returns>
-    public virtual IEnumerable<KeyValuePair<string, TValue>> Search(string prefix)
-    {
-        ArgumentNullException.ThrowIfNull(prefix);
-
-        if (!SearchOrPrune(prefix, false, out var node))
-            return [];
-
-        // depth-first traversal
-        IEnumerable<KeyValuePair<string, TValue>> traverse(TrieNode n, string s)
-        {
-            if (n.TryGetValue(out var value))
-                yield return new KeyValuePair<string, TValue>(s, value);
-
-            var nLock = GetLock(n);
-            nLock.EnterReadLock();
-            List<TrieNode> children;
-
-            try
-            {
-                // we can't know what is done during enumeration, so we need to make a copy of the children
-                children = [.. n.Children.Values];
-            }
-            finally
-            {
-                nLock.ExitReadLock();
-            }
-
-            foreach (var child in children)
-                foreach (var kv in traverse(child, s + child.Label))
-                    yield return kv;
-        }
-
-        return traverse(node, node.Label);
-    }
-
-    /// <summary>
-    /// Removes the item with the given key, if present
-    /// </summary>
-    /// <param name="key">The key (case-sensitive) of the item to be removed</param>
-    public void Remove(string key)
-    {
-        if (string.IsNullOrEmpty(key))
-            throw new ArgumentException($"'{nameof(key)}' cannot be null or empty.", nameof(key));
-
-        Remove(_root, key);
-    }
-
-    /// <summary>
-    /// Attempts to remove all items with keys starting with the specified prefix
-    /// </summary>
-    /// <param name="prefix">The prefix (case-sensitive) of the items to be deleted</param>
-    /// <param name="subCollection">The sub-collection containing all deleted items, if found</param>
-    /// <returns>
-    /// True if the prefix was successfully removed from the trie, otherwise false
-    /// </returns>
-    public virtual IPrefixTree<TValue> Prune(string prefix)
-    {
-        var succeeded = SearchOrPrune(prefix, true, out var subtreeRoot);
-        return succeeded ? new ConcurrentTrie<TValue>(subtreeRoot) : new ConcurrentTrie<TValue>();
-    }
-
-    public override string ToString()
-    {
-        return "{" + string.Join(", ", Search(string.Empty).Select(kv => $"\"{kv.Key}\": {kv.Value}")) + "}";
+        return true;
     }
 
     protected bool SearchOrPrune(string prefix, bool prune, out TrieNode subtreeRoot)
@@ -591,127 +659,6 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
         }
 
         return false;
-    }
-
-    #endregion
-
-    #region Properties
-
-    /// <summary>
-    /// Gets a collection that contains the keys in the <see cref="ConcurrentTrie{TValue}" />
-    /// </summary>
-    public IEnumerable<string> Keys => Search(string.Empty).Select(t => t.Key);
-
-    #endregion
-
-    #region Nested classes
-
-    /// <summary>
-    /// An implementation of a trie node
-    /// </summary>
-    protected class TrieNode(string label = "")
-    {
-        #region Fields
-
-        // used to avoid keeping a separate boolean flag that would use another byte per node
-        protected static readonly ValueWrapper _deleted = new(default);
-        protected volatile ValueWrapper? _value;
-
-        #endregion
-        #region Ctor
-
-        public TrieNode(ReadOnlySpan<char> label) : this(label.ToString())
-        {
-        }
-
-        public TrieNode(string label, TrieNode node) : this(label)
-        {
-            Children = node.Children;
-            _value = node._value;
-        }
-
-        public TrieNode(ReadOnlySpan<char> label, TrieNode node) : this(label)
-        {
-            Children = node.Children;
-            _value = node._value;
-        }
-
-        #endregion
-
-        #region Methods
-
-        /// <summary>
-        /// Attempts to get the node value
-        /// </summary>
-        /// <param name="value">The node value, if value exists</param>
-        /// <returns>
-        /// True if value exists, otherwise false
-        /// </returns>
-        public bool TryGetValue(out TValue value)
-        {
-            var wrapper = _value;
-            value = default;
-
-            if (wrapper == null)
-                return false;
-
-            value = wrapper.Value;
-
-            return true;
-        }
-
-        public bool TryRemoveValue(out TValue value)
-        {
-            var wrapper = Interlocked.Exchange(ref _value, null);
-            value = default;
-
-            if (wrapper == null)
-                return false;
-
-            value = wrapper.Value;
-
-            return true;
-        }
-
-        public void SetValue(TValue value)
-        {
-            _value = new ValueWrapper(value);
-        }
-
-        public TValue GetOrAddValue(TValue value)
-        {
-            var wrapper = Interlocked.CompareExchange(ref _value, new ValueWrapper(value), null);
-
-            return wrapper != null ? wrapper.Value : value;
-        }
-
-        public void Delete()
-        {
-            _value = _deleted;
-        }
-
-        #endregion
-
-        #region Properties
-
-        public Dictionary<char, TrieNode> Children { get; } = [];
-
-        public string Label { get; } = label;
-
-        public bool IsDeleted => _value == _deleted;
-
-        public bool HasValue => _value != null && !IsDeleted;
-
-        #endregion
-
-        #region Nested class
-
-        protected class ValueWrapper(TValue value)
-        {
-            public readonly TValue Value = value;
-        }
-
-        #endregion
     }
 
     #endregion

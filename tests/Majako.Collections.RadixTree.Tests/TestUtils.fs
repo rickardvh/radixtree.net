@@ -6,6 +6,7 @@ open Swensen.Unquote.Assertions
 /// Assertion comparing two sequences for equality, ignoring order
 let (==!) xs ys = (Seq.sort xs |> Seq.toList) =! (Seq.sort ys |> Seq.toList)
 
+/// Compares two sequences for equality, ignoring order
 let (==) xs ys =
     let xs' = Seq.sort xs |> Seq.toList
     let ys' = Seq.sort ys |> Seq.toList

@@ -3,6 +3,7 @@ module Majako.Collections.RadixTree.Tests.ConcurrentTrieTests
 open Xunit
 open Swensen.Unquote
 open Majako.Collections.RadixTree
+open System
 
 [<Fact>]
 let ``Can add and get value`` () =
@@ -48,6 +49,18 @@ let ``Does not block while enumerating`` () =
         sut.Remove(item) |> ignore
 
 [<Fact>]
+let ``Throws when trying to add null or empty key`` () =
+    let sut = ConcurrentTrie<int>()
+    raises<ArgumentException> <@ sut.Add("", 0) @>
+    raises<ArgumentException> <@ sut.Add(null, 0) @>
+
+[<Fact>]
+let ``Throws when trying to remove null or empty key`` () =
+    let sut = ConcurrentTrie<int>()
+    raises<ArgumentException> <@ sut.Remove("") @>
+    raises<ArgumentException> <@ sut.Remove(null) @>
+
+[<Fact>]
 let ``Can remove value`` () =
     let sut = ConcurrentTrie<int>()
     sut.Add("a", 1)
@@ -57,12 +70,12 @@ let ``Can remove value`` () =
     sut.Add("aa", 1)
     sut.Add("abc", 1)
     sut.Add("abb", 1)
-    sut.Remove("ab")
+    sut.Remove("ab") |> ignore
     let found, _ = sut.TryGetValue("ab")
     test <@ not found @>
     sut.Keys ==! [ "abc"; "a"; "b"; "aa"; "abb"; "bbb" ]
-    sut.Remove("ab")
-    sut.Remove("bb")
+    sut.Remove("ab") |> ignore
+    sut.Remove("bb") |> ignore
     let found, _ = sut.TryGetValue("b")
     test <@ found @>
     let found, _ = sut.TryGetValue("bbb")
@@ -70,7 +83,7 @@ let ``Can remove value`` () =
 
     let sut = sut.Prune("b")
     sut.Keys ==! [ "b"; "bbb" ]
-    sut.Remove("b")
+    sut.Remove("b") |> ignore
     sut.Keys ==! [ "bbb" ]
 
 [<Fact>]
@@ -168,7 +181,7 @@ let ``Does not break during parallel add remove`` () =
             let found, value = sut.TryGetValue(key)
             test <@ found @>
             value =! i
-            sut.Remove(key)
+            sut.Remove(key) |> ignore
             let found, _ = sut.TryGetValue(key)
             test <@ not found @>
 
