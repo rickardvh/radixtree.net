@@ -21,5 +21,15 @@ public partial interface IPrefixTree<TValue> : IDictionary<string, TValue>
     /// <returns>
     /// The sub-collection containing all deleted items (possibly empty)
     /// </returns>
-     IPrefixTree<TValue> Prune(string prefix);
+    IPrefixTree<TValue> Prune(string prefix);
+
+    /// <summary>
+    /// Gets all keys in the collection as an enumerable
+    /// </summary>
+    new IEnumerable<string> Keys { get; }
+
+    /// <summary>
+    /// Gets all values in the collection as an enumerable
+    /// </summary>
+    new IEnumerable<TValue> Values { get; }
 }

@@ -30,7 +30,6 @@ type Scenarios(output: ITestOutputHelper) =
                 sut.Add(Guid.NewGuid().ToString(), 0)
 
         profile <| fun () -> Array.Parallel.iter add [| 1..1000 |]
-        // printfn "Collisions: %d" sut.Counter
 
     [<Fact(Skip = SKIP)>]
     let ``Profile add/remove`` () =
@@ -45,4 +44,3 @@ type Scenarios(output: ITestOutputHelper) =
                 sut.Remove(key(i, j)) |> ignore
 
         profile <| fun () -> Array.Parallel.iter addRemove [| 1..1000 |]
-        // printfn "Collisions: %d" sut.Counter

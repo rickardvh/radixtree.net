@@ -52,16 +52,19 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
     #region Properties
 
     /// <inheritdoc/>
-    public IEnumerable<string> Keys => Search(string.Empty).Select(t => t.Key);
+    public IEnumerable<string> Keys => this.Select(t => t.Key);
+
+    /// <inheritdoc/>
+    public IEnumerable<TValue> Values => this.Select(t => t.Value);
 
     /// <inheritdoc/>
     ICollection<string> IDictionary<string, TValue>.Keys => Keys.ToList();
 
     /// <inheritdoc/>
-    public ICollection<TValue> Values => Search(string.Empty).Select(t => t.Value).ToList();
+    ICollection<TValue> IDictionary<string, TValue>.Values => Values.ToList();
 
     /// <inheritdoc/>
-    public int Count => Search(string.Empty).Count();
+    public int Count => this.Count();
 
     /// <inheritdoc/>
     public bool IsReadOnly => false;
@@ -73,7 +76,7 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
     /// <inheritdoc/>
     public TValue this[string key]
     {
-        get => Find(key, _root, out var node) && node.TryGetValue(out var value) ? value : throw new KeyNotFoundException();
+        get => TryGetValue(key, out var value) ? value : throw new KeyNotFoundException();
         set => Add(key, value);
     }
 
@@ -81,23 +84,18 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
 
     #region Methods
 
-    /// <inheritdoc/>
-    public virtual IPrefixTree<TValue> Prune(string prefix)
-    {
-        var succeeded = SearchOrPrune(prefix, true, out var subtreeRoot);
-        return succeeded ? new ConcurrentTrie<TValue>(subtreeRoot) : new ConcurrentTrie<TValue>();
-    }
+    #region Public
 
     /// <inheritdoc/>
     public override string ToString()
     {
-        return "{" + string.Join(", ", Search(string.Empty).Select(kv => $"\"{kv.Key}\": {kv.Value}")) + "}";
+        return "{" + string.Join(", ", this.Select(kv => $"\"{kv.Key}\": {kv.Value}")) + "}";
     }
 
     /// <inheritdoc/>
     public virtual bool TryGetValue(string key, out TValue value)
     {
-        ArgumentNullException.ThrowIfNull(key);
+        ArgumentException.ThrowIfNullOrEmpty(key, nameof(key));
 
         value = default;
 
@@ -107,8 +105,7 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
     /// <inheritdoc/>
     public virtual void Add(string key, TValue value)
     {
-        if (string.IsNullOrEmpty(key))
-            throw new ArgumentException($"'{nameof(key)}' cannot be null or empty.", nameof(key));
+        ArgumentException.ThrowIfNullOrEmpty(key, nameof(key));
 
         GetOrAddNode(key, value, true);
     }
@@ -117,6 +114,60 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
     public virtual void Clear()
     {
         _root = new TrieNode();
+    }
+
+    /// <inheritdoc/>
+    public bool ContainsKey(string key)
+    {
+        return TryGetValue(key, out _);
+    }
+
+    /// <inheritdoc/>
+    public bool Remove(string key)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(key, nameof(key));
+
+        return Remove(_root, key);
+    }
+
+    /// <inheritdoc/>
+    public void Add(KeyValuePair<string, TValue> item)
+    {
+        Add(item.Key, item.Value);
+    }
+
+    /// <inheritdoc/>
+    public bool Contains(KeyValuePair<string, TValue> item)
+    {
+        return TryGetValue(item.Key, out var value)
+            && EqualityComparer<TValue>.Default.Equals(value, item.Value);
+    }
+
+    /// <inheritdoc/>
+    public void CopyTo(KeyValuePair<string, TValue>[] array, int arrayIndex)
+    {
+        foreach (var kv in this)
+            array[arrayIndex++] = kv;
+    }
+
+    /// <inheritdoc/>
+    public bool Remove(KeyValuePair<string, TValue> item)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(item.Key, nameof(item.Key));
+
+        return Remove(_root, item.Key, new ValueWrapper(item.Value));
+    }
+
+    /// <inheritdoc/>
+    public IEnumerator<KeyValuePair<string, TValue>> GetEnumerator()
+    {
+        return Search(string.Empty).GetEnumerator();
+    }
+
+    /// <inheritdoc/>
+    IEnumerator IEnumerable.GetEnumerator()
+    {
+        return GetEnumerator();
     }
 
     /// <inheritdoc/>
@@ -156,58 +207,13 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
     }
 
     /// <inheritdoc/>
-    public bool ContainsKey(string key)
+    public virtual IPrefixTree<TValue> Prune(string prefix)
     {
-        return Find(key, _root, out _);
+        var succeeded = SearchOrPrune(prefix, true, out var subtreeRoot);
+        return succeeded ? new ConcurrentTrie<TValue>(subtreeRoot) : [];
     }
 
-    /// <inheritdoc/>
-    public bool Remove(string key)
-    {
-        if (string.IsNullOrEmpty(key))
-            throw new ArgumentException($"'{nameof(key)}' cannot be null or empty.", nameof(key));
-
-        return Remove(_root, key);
-    }
-
-    /// <inheritdoc/>
-    public void Add(KeyValuePair<string, TValue> item)
-    {
-        Add(item.Key, item.Value);
-    }
-
-    /// <inheritdoc/>
-    public bool Contains(KeyValuePair<string, TValue> item)
-    {
-        return Find(item.Key, _root, out var node)
-            && node.TryGetValue(out var value)
-            && EqualityComparer<TValue>.Default.Equals(value, item.Value);
-    }
-
-    /// <inheritdoc/>
-    public void CopyTo(KeyValuePair<string, TValue>[] array, int arrayIndex)
-    {
-        foreach (var kv in Search(string.Empty))
-            array[arrayIndex++] = kv;
-    }
-
-    /// <inheritdoc/>
-    public bool Remove(KeyValuePair<string, TValue> item)
-    {
-        return Remove(_root, item.Key, new ValueWrapper(item.Value));
-    }
-
-    /// <inheritdoc/>
-    public IEnumerator<KeyValuePair<string, TValue>> GetEnumerator()
-    {
-        return Search(string.Empty).GetEnumerator();
-    }
-
-    /// <inheritdoc/>
-    IEnumerator IEnumerable.GetEnumerator()
-    {
-        return GetEnumerator();
-    }
+    #endregion
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     protected static int GetCommonPrefixLength(ReadOnlySpan<char> s1, ReadOnlySpan<char> s2)
