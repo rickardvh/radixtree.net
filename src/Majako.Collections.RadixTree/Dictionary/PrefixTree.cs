@@ -1,6 +1,5 @@
 ﻿using System.Collections;
 using System.Diagnostics.CodeAnalysis;
-using System.Runtime.CompilerServices;
 
 namespace Majako.Collections.RadixTree;
 
@@ -50,16 +49,4 @@ public abstract partial class PrefixTree<TValue> : IPrefixTree<TValue>
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
     public override string ToString() => "{" + string.Join(", ", this.Select(kv => $"\"{kv.Key}\": {kv.Value}")) + "}";
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    protected static int GetCommonPrefixLength(ReadOnlySpan<char> s1, ReadOnlySpan<char> s2)
-    {
-        var i = 0;
-        var minLength = Math.Min(s1.Length, s2.Length);
-
-        while (i < minLength && s2[i] == s1[i])
-            i++;
-
-        return i;
-    }
 }

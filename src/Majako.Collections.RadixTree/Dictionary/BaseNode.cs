@@ -8,6 +8,13 @@ public abstract partial class PrefixTree<TValue>
         protected static readonly ValueWrapper _deleted = new(default);
         protected abstract ValueWrapper Value { get; set; }
 
+        public virtual string Label { get; } = label;
+
+        public virtual bool IsDeleted => Value == _deleted;
+
+        public virtual bool HasValue => Value != null && !IsDeleted;
+
+
         public BaseNode(ReadOnlySpan<char> label) : this(label.ToString())
         {
         }
@@ -48,11 +55,5 @@ public abstract partial class PrefixTree<TValue>
         {
             Value = _deleted;
         }
-
-        public virtual string Label { get; } = label;
-
-        public virtual bool IsDeleted => Value == _deleted;
-
-        public virtual bool HasValue => Value != null && !IsDeleted;
     }
 }
