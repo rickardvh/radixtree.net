@@ -1,7 +1,4 @@
-﻿using System.Collections;
-using System.Runtime.CompilerServices;
-
-namespace Majako.Collections.RadixTree.Concurrent;
+﻿namespace Majako.Collections.RadixTree.Concurrent;
 
 /// <summary>
 /// A thread-safe implementation of a radix tree
