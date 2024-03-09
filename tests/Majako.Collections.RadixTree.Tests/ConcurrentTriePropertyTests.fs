@@ -2,7 +2,7 @@ module Majako.Collections.RadixTree.Tests.ConcurrentTriePropertyTests
 
 open FsCheck
 open FsCheck.Xunit
-open Majako.Collections.RadixTree
+open Majako.Collections.RadixTree.Concurrent
 open System.Collections.Generic
 
 type TestItems = list<NonEmptyString * int>

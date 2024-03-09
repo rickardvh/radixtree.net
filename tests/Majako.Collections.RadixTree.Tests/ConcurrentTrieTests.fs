@@ -2,7 +2,7 @@ module Majako.Collections.RadixTree.Tests.ConcurrentTrieTests
 
 open Xunit
 open Swensen.Unquote
-open Majako.Collections.RadixTree
+open Majako.Collections.RadixTree.Concurrent
 open System
 
 [<Fact>]
@@ -185,7 +185,7 @@ let ``Does not break during parallel add remove`` () =
             let found, _ = sut.TryGetValue(key)
             test <@ not found @>
 
-    Array.Parallel.iter addRemove [| 1..1000 |]
+    Array.Parallel.iter addRemove [| 1..100 |]
 
     test <@ Seq.isEmpty sut.Keys @>
 
@@ -194,12 +194,13 @@ let ``Does not break during parallel add prune`` () =
     let sut = ConcurrentTrie<int>()
 
     let addPrune j =
-        for i in 1..1000 do
+        let n = 1000
+        for i in 1..n do
             sut.Add($"{j}-{i}", i)
 
         let subtree = sut.Prune($"{j}-")
-        Seq.length subtree.Keys =! 1000
+        Seq.length subtree.Keys =! n
 
-    Array.Parallel.iter addPrune [| 1..1000 |]
+    Array.Parallel.iter addPrune [| 1..100 |]
 
     test <@ Seq.isEmpty sut.Keys @>

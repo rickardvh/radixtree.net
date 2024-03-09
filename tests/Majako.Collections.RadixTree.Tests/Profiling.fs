@@ -2,7 +2,7 @@
 
 open System.Diagnostics
 open Xunit
-open Majako.Collections.RadixTree
+open Majako.Collections.RadixTree.Concurrent
 open System
 open Xunit.Abstractions
 

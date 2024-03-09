@@ -1,16 +1,16 @@
 ﻿using System.Collections;
 using System.Runtime.CompilerServices;
 
-namespace Majako.Collections.RadixTree;
+namespace Majako.Collections.RadixTree.Concurrent;
 
 /// <summary>
 /// A thread-safe implementation of a radix tree
 /// </summary>
-public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
+public partial class ConcurrentTrie<TValue> : PrefixTree<TValue>
 {
     #region Fields
 
-    protected volatile TrieNode _root = new();
+    protected volatile BaseNode _root = new Node();
     protected readonly StripedReaderWriterLock _locks = new();
     protected readonly ReaderWriterLockSlim _structureLock = new();
 
@@ -39,7 +39,7 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
     /// Initializes a new instance of <see cref="ConcurrentTrie{TValue}" /> with the given subtree root
     /// </summary>
     /// <param name="subtreeRoot">The root of the subtree</param>
-    protected ConcurrentTrie(TrieNode subtreeRoot)
+    protected ConcurrentTrie(BaseNode subtreeRoot)
     {
         if (subtreeRoot.Label.Length == 0)
             _root = subtreeRoot;
@@ -49,51 +49,12 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
 
     #endregion
 
-    #region Properties
-
-    /// <inheritdoc/>
-    public IEnumerable<string> Keys => this.Select(t => t.Key);
-
-    /// <inheritdoc/>
-    public IEnumerable<TValue> Values => this.Select(t => t.Value);
-
-    /// <inheritdoc/>
-    ICollection<string> IDictionary<string, TValue>.Keys => Keys.ToList();
-
-    /// <inheritdoc/>
-    ICollection<TValue> IDictionary<string, TValue>.Values => Values.ToList();
-
-    /// <inheritdoc/>
-    public int Count => this.Count();
-
-    /// <inheritdoc/>
-    public bool IsReadOnly => false;
-
-    #endregion
-
-    #region Indexers
-
-    /// <inheritdoc/>
-    public TValue this[string key]
-    {
-        get => TryGetValue(key, out var value) ? value : throw new KeyNotFoundException();
-        set => Add(key, value);
-    }
-
-    #endregion
-
     #region Methods
 
     #region Public
 
     /// <inheritdoc/>
-    public override string ToString()
-    {
-        return "{" + string.Join(", ", this.Select(kv => $"\"{kv.Key}\": {kv.Value}")) + "}";
-    }
-
-    /// <inheritdoc/>
-    public virtual bool TryGetValue(string key, out TValue value)
+    public override bool TryGetValue(string key, out TValue value)
     {
         ArgumentException.ThrowIfNullOrEmpty(key, nameof(key));
 
@@ -103,7 +64,7 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
     }
 
     /// <inheritdoc/>
-    public virtual void Add(string key, TValue value)
+    public override void Add(string key, TValue value)
     {
         ArgumentException.ThrowIfNullOrEmpty(key, nameof(key));
 
@@ -111,19 +72,13 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
     }
 
     /// <inheritdoc/>
-    public virtual void Clear()
+    public override void Clear()
     {
-        _root = new TrieNode();
+        _root = new Node();
     }
 
     /// <inheritdoc/>
-    public bool ContainsKey(string key)
-    {
-        return TryGetValue(key, out _);
-    }
-
-    /// <inheritdoc/>
-    public bool Remove(string key)
+    public override bool Remove(string key)
     {
         ArgumentException.ThrowIfNullOrEmpty(key, nameof(key));
 
@@ -131,27 +86,7 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
     }
 
     /// <inheritdoc/>
-    public void Add(KeyValuePair<string, TValue> item)
-    {
-        Add(item.Key, item.Value);
-    }
-
-    /// <inheritdoc/>
-    public bool Contains(KeyValuePair<string, TValue> item)
-    {
-        return TryGetValue(item.Key, out var value)
-            && EqualityComparer<TValue>.Default.Equals(value, item.Value);
-    }
-
-    /// <inheritdoc/>
-    public void CopyTo(KeyValuePair<string, TValue>[] array, int arrayIndex)
-    {
-        foreach (var kv in this)
-            array[arrayIndex++] = kv;
-    }
-
-    /// <inheritdoc/>
-    public bool Remove(KeyValuePair<string, TValue> item)
+    public override bool Remove(KeyValuePair<string, TValue> item)
     {
         ArgumentException.ThrowIfNullOrEmpty(item.Key, nameof(item.Key));
 
@@ -159,19 +94,7 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
     }
 
     /// <inheritdoc/>
-    public IEnumerator<KeyValuePair<string, TValue>> GetEnumerator()
-    {
-        return Search(string.Empty).GetEnumerator();
-    }
-
-    /// <inheritdoc/>
-    IEnumerator IEnumerable.GetEnumerator()
-    {
-        return GetEnumerator();
-    }
-
-    /// <inheritdoc/>
-    public virtual IEnumerable<KeyValuePair<string, TValue>> Search(string prefix)
+    public override IEnumerable<KeyValuePair<string, TValue>> Search(string prefix)
     {
         ArgumentNullException.ThrowIfNull(prefix);
 
@@ -179,14 +102,14 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
             return [];
 
         // depth-first traversal
-        IEnumerable<KeyValuePair<string, TValue>> traverse(TrieNode n, string s)
+        IEnumerable<KeyValuePair<string, TValue>> traverse(BaseNode n, string s)
         {
             if (n.TryGetValue(out var value))
                 yield return new KeyValuePair<string, TValue>(s, value);
 
             var nLock = GetLock(n);
             nLock.EnterReadLock();
-            List<TrieNode> children;
+            List<BaseNode> children;
 
             try
             {
@@ -207,7 +130,7 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
     }
 
     /// <inheritdoc/>
-    public virtual IPrefixTree<TValue> Prune(string prefix)
+    public override IPrefixTree<TValue> Prune(string prefix)
     {
         var succeeded = SearchOrPrune(prefix, true, out var subtreeRoot);
         return succeeded ? new ConcurrentTrie<TValue>(subtreeRoot) : [];
@@ -215,30 +138,18 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
 
     #endregion
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    protected static int GetCommonPrefixLength(ReadOnlySpan<char> s1, ReadOnlySpan<char> s2)
-    {
-        var i = 0;
-        var minLength = Math.Min(s1.Length, s2.Length);
-
-        while (i < minLength && s2[i] == s1[i])
-            i++;
-
-        return i;
-    }
-
     /// <summary>
     /// Gets a lock on the node's children
     /// </summary>
     /// <remarks>
     /// May return the same lock for two different nodes, so the user needs to check to avoid lock recursion exceptions
     /// </remarks>
-    protected virtual ReaderWriterLockSlim GetLock(TrieNode node)
+    protected virtual ReaderWriterLockSlim GetLock(BaseNode node)
     {
         return _locks.GetLock(node.Children);
     }
 
-    protected virtual bool Find(string key, TrieNode subtreeRoot, out TrieNode node)
+    protected virtual bool Find(string key, BaseNode subtreeRoot, out BaseNode node)
     {
         node = subtreeRoot;
 
@@ -275,13 +186,13 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
         }
     }
 
-    protected virtual TrieNode GetOrAddNode(ReadOnlySpan<char> key, TValue value, bool overwrite = false)
+    protected virtual BaseNode GetOrAddNode(ReadOnlySpan<char> key, TValue value, bool overwrite = false)
     {
         var node = _root;
         var suffix = key;
         ReaderWriterLockSlim nodeLock;
         char c;
-        TrieNode nextNode;
+        BaseNode nextNode;
         _structureLock.EnterReadLock();
 
         try
@@ -329,7 +240,7 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
 
                     try
                     {
-                        var suffixNode = new TrieNode(suffix);
+                        var suffixNode = new Node(suffix);
                         suffixNode.SetValue(value);
 
                         return node.Children[c] = suffixNode;
@@ -380,19 +291,19 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
                     break;
                 }
 
-                var splitNode = new TrieNode(suffix[..i])
+                var splitNode = new Node(suffix[..i])
                 {
-                    Children = { [label[i]] = new TrieNode(label[i..], nextNode) }
+                    Children = { [label[i]] = new Node(label[i..], nextNode) }
                 };
 
-                TrieNode outNode;
+                BaseNode outNode;
 
                 // label starts with suffix, so we can return splitNode
                 if (i == suffix.Length)
                     outNode = splitNode;
                 // the keys diverge, so we need to branch from splitNode
                 else
-                    splitNode.Children[suffix[i]] = outNode = new TrieNode(suffix[i..]);
+                    splitNode.Children[suffix[i]] = outNode = new Node(suffix[i..]);
 
                 outNode.SetValue(value);
                 nodeLock.EnterWriteLock();
@@ -427,9 +338,9 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
     /// <param name="key">The key to remove</param>
     /// <param name="valueWrapper">(Optional) The value to remove. If specified, the node will only be removed if its value matches the wrapped value</param>
     /// <returns></returns>
-    protected virtual bool Remove(TrieNode subtreeRoot, ReadOnlySpan<char> key, ValueWrapper valueWrapper = null)
+    protected virtual bool Remove(BaseNode subtreeRoot, ReadOnlySpan<char> key, ValueWrapper valueWrapper = null)
     {
-        TrieNode node = null, grandparent = null;
+        BaseNode node = null, grandparent = null;
         var parent = subtreeRoot;
         var i = 0;
         _structureLock.EnterReadLock();
@@ -540,7 +451,7 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
                                     return false;
 
                                 var child = parent.Children.First().Value;
-                                grandparent.Children[c] = new TrieNode(parent.Label + child.Label, child);
+                                grandparent.Children[c] = new Node(parent.Label + child.Label, child);
                                 parent.Delete();
                             }
                             finally
@@ -567,7 +478,7 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
                             return false;
 
                         var child = node.Children.FirstOrDefault().Value;
-                        parent.Children[c] = new TrieNode(node.Label + child.Label, child);
+                        parent.Children[c] = new Node(node.Label + child.Label, child);
                         node.Delete();
                     }
                     finally
@@ -591,7 +502,7 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
         return true;
     }
 
-    protected bool SearchOrPrune(string prefix, bool prune, out TrieNode subtreeRoot)
+    protected bool SearchOrPrune(string prefix, bool prune, out BaseNode subtreeRoot)
     {
         ArgumentNullException.ThrowIfNull(prefix);
 
@@ -599,7 +510,7 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
         {
             subtreeRoot = _root;
             if (prune)
-                _root = new();
+                _root = new Node();
             return true;
         }
 
@@ -625,7 +536,7 @@ public partial class ConcurrentTrie<TValue> : IPrefixTree<TValue>
 
                 if (k == span.Length - i)
                 {
-                    subtreeRoot = new TrieNode(prefix[..i] + node.Label, node);
+                    subtreeRoot = new Node(prefix[..i] + node.Label, node);
                     if (!prune)
                         return true;
 
