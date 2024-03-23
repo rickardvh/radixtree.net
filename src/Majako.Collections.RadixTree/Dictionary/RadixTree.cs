@@ -315,14 +315,7 @@ public partial class RadixTree<TValue> : PrefixTree<TValue>
             if (k == span.Length - i)
             {
                 subtreeRoot = new Node(prefix[..i] + node.Label, node);
-                if (!prune)
-                    return true;
-
-                if (parent.Children.Remove(c, out _))
-                    return true;
-
-                // was removed by another thread
-                return false;
+                return !prune || parent.Children.Remove(c, out _);
             }
 
             if (k < label.Length)
