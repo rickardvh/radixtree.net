@@ -1,6 +1,6 @@
 namespace Majako.Collections.RadixTree;
 
-public partial class ConcurrentTrie<TValue>
+public abstract partial class PrefixTree<TValue>
 {
     protected class ValueWrapper(TValue value)
     {

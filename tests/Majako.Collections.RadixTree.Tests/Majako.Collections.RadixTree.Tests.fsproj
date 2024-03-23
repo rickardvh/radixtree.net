@@ -9,9 +9,15 @@
 
   <ItemGroup>
     <Compile Include="TestUtils.fs" />
-    <Compile Include="ConcurrentTrieTests.fs" />
-    <Compile Include="ConcurrentTriePropertyTests.fs" />
-    <Compile Include="Profiling.fs" />
+    <Compile Include="Dictionary/PrefixTreeTestBase.fs" />
+    <Compile Include="Dictionary/PrefixTreePropertyTestBase.fs" />
+    <Compile Include="Dictionary/ConcurrentTrieTests.fs" />
+    <Compile Include="Dictionary/ConcurrentTriePropertyTests.fs" />
+    <Compile Include="Dictionary/Profiling.fs" />
+    <Compile Include="Dictionary/RadixTreePropertyTests.fs" />
+    <Compile Include="Dictionary/RadixTreeTests.fs" />
+    <Compile Include="Set/RadixTreeTests.fs" />
+    <Compile Include="Set/RadixTreePropertyTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
