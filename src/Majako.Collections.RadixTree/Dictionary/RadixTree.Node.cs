@@ -67,10 +67,5 @@ public partial class RadixTree<TValue>
 
             return value;
         }
-
-        public override void Delete()
-        {
-            Value = _deleted;
-        }
     }
 }
