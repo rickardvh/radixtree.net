@@ -56,6 +56,24 @@ public partial class RadixTree : PrefixTree
         return GetOrAddNode(key, out _);
     }
 
+    public override bool Contains(string item)
+    {
+        return Find(item, _root, out _);
+    }
+
+    public override void SymmetricExceptWith(IEnumerable<string> other)
+    {
+        var set = new HashSet<string>(other);
+        var toAdd = new List<string>();
+        var toRemove = new List<string>();
+
+        foreach (var item in this)
+            (set.Contains(item) ? toRemove : toAdd).Add(item);
+
+        ExceptWith(toRemove);
+        UnionWith(toAdd);
+    }
+
     /// <inheritdoc/>
     public override void Clear()
     {
@@ -302,24 +320,6 @@ public partial class RadixTree : PrefixTree
         }
 
         return false;
-    }
-
-    public override bool Contains(string item)
-    {
-        return Find(item, _root, out _);
-    }
-
-    public override void SymmetricExceptWith(IEnumerable<string> other)
-    {
-        var set = new HashSet<string>(other);
-        var toAdd = new List<string>();
-        var toRemove = new List<string>();
-
-        foreach (var item in this)
-            (set.Contains(item) ? toRemove : toAdd).Add(item);
-
-        ExceptWith(toRemove);
-        UnionWith(toAdd);
     }
 
     #endregion
