@@ -23,7 +23,7 @@ type Scenarios(output: ITestOutputHelper) =
 
     [<Fact(Skip = SKIP)>]
     let ``Profile`` () =
-        let sut = ConcurrentTrie<int>()
+        let sut = ConcurrentRadixTree<int>()
 
         let add _ =
             for _ = 1 to 10000 do
@@ -33,7 +33,7 @@ type Scenarios(output: ITestOutputHelper) =
 
     [<Fact(Skip = SKIP)>]
     let ``Profile add/remove`` () =
-        let sut = ConcurrentTrie<int>()
+        let sut = ConcurrentRadixTree<int>()
 
         let key(i, j) = $"{i}-{j}"
 

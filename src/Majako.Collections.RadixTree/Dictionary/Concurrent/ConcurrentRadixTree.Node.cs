@@ -1,6 +1,6 @@
 namespace Majako.Collections.RadixTree.Concurrent;
 
-public partial class ConcurrentTrie<TValue>
+public partial class ConcurrentRadixTree<TValue>
 {
     /// <summary>
     /// An implementation of a trie node

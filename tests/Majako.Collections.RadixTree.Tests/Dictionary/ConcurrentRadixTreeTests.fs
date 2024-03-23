@@ -4,12 +4,12 @@ open Xunit
 open Swensen.Unquote
 open Majako.Collections.RadixTree.Concurrent
 
-type ConcurrentTrieTests() =
-    inherit PrefixTreeTestBase(fun () -> ConcurrentTrie<int>())
+type ConcurrentRadixTreeTests() =
+    inherit PrefixTreeTestBase(fun () -> ConcurrentRadixTree<int>())
 
     [<Fact>]
     let ``Does not break during parallel add remove`` () =
-        let sut = ConcurrentTrie<int>()
+        let sut = ConcurrentRadixTree<int>()
 
         let addRemove j =
             for i in 1..1000 do
@@ -28,7 +28,7 @@ type ConcurrentTrieTests() =
 
     [<Fact>]
     let ``Does not break during parallel add prune`` () =
-        let sut = ConcurrentTrie<int>()
+        let sut = ConcurrentRadixTree<int>()
 
         let addPrune j =
             let n = 1000

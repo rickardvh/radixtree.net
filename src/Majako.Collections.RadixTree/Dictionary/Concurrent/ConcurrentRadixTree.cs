@@ -3,7 +3,7 @@
 /// <summary>
 /// A thread-safe implementation of a radix tree
 /// </summary>
-public partial class ConcurrentTrie<TValue> : PrefixTree<TValue>
+public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
 {
     #region Fields
 
@@ -16,27 +16,27 @@ public partial class ConcurrentTrie<TValue> : PrefixTree<TValue>
     #region Constructors
 
     /// <summary>
-    /// Initializes a new empty instance of <see cref="ConcurrentTrie{TValue}" />
+    /// Initializes a new empty instance of <see cref="ConcurrentRadixTree{TValue}" />
     /// </summary>
-    public ConcurrentTrie()
+    public ConcurrentRadixTree()
     {
     }
 
     /// <summary>
-    /// Initializes a new instance of <see cref="ConcurrentTrie{TValue}" /> with the given items
+    /// Initializes a new instance of <see cref="ConcurrentRadixTree{TValue}" /> with the given items
     /// </summary>
     /// <param name="items">The items to be added to the trie</param>
-    public ConcurrentTrie(IEnumerable<KeyValuePair<string, TValue>> items)
+    public ConcurrentRadixTree(IEnumerable<KeyValuePair<string, TValue>> items)
     {
         foreach (var (key, value) in items)
             Add(key, value);
     }
 
     /// <summary>
-    /// Initializes a new instance of <see cref="ConcurrentTrie{TValue}" /> with the given subtree root
+    /// Initializes a new instance of <see cref="ConcurrentRadixTree{TValue}" /> with the given subtree root
     /// </summary>
     /// <param name="subtreeRoot">The root of the subtree</param>
-    protected ConcurrentTrie(BaseNode subtreeRoot)
+    protected ConcurrentRadixTree(BaseNode subtreeRoot)
     {
         if (subtreeRoot.Label.Length == 0)
             _root = subtreeRoot;
@@ -130,7 +130,7 @@ public partial class ConcurrentTrie<TValue> : PrefixTree<TValue>
     public override IPrefixTree<TValue> Prune(string prefix)
     {
         var succeeded = SearchOrPrune(prefix, true, out var subtreeRoot);
-        return succeeded ? new ConcurrentTrie<TValue>(subtreeRoot) : [];
+        return succeeded ? new ConcurrentRadixTree<TValue>(subtreeRoot) : [];
     }
 
     #endregion
