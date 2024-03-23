@@ -15,11 +15,11 @@ public abstract partial class PrefixTree
         public BaseNode(string label, BaseNode node) : this(label)
         {
             Children = node.Children;
+            IsTerminal = node.IsTerminal;
         }
 
-        public BaseNode(ReadOnlySpan<char> label, BaseNode node) : this(label)
+        public BaseNode(ReadOnlySpan<char> label, BaseNode node) : this(label.ToString(), node)
         {
-            Children = node.Children;
         }
 
         public abstract bool IsTerminal { get; set; }

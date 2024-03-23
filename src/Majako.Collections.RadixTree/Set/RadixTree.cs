@@ -138,13 +138,12 @@ public partial class RadixTree : PrefixTree
         node = _root;
         var suffix = key;
         char c;
-        BaseNode nextNode;
 
         while (true)
         {
             c = suffix[0];
 
-            if (node.Children.TryGetValue(c, out nextNode))
+            if (node.Children.TryGetValue(c, out BaseNode nextNode))
             {
                 var label = nextNode.Label.AsSpan();
                 var i = GetCommonPrefixLength(label, suffix);
@@ -165,10 +164,25 @@ public partial class RadixTree : PrefixTree
                     continue;
                 }
 
-                // we need to add a node, but don't want to hold an upgradeable read lock on _structureLock
-                // since only one can be held at a time, so we break, release the lock and reacquire a write lock
-                break;
+                // we need to add a node between node and nextNode
+                var splitNode = new Node(suffix[..i])
+                {
+                    Children = { [label[i]] = new Node(label[i..], nextNode) }
+                };
+
+                node.Children[c] = splitNode;
+
+                // label starts with suffix, so we can return splitNode
+                if (i == suffix.Length)
+                    node = splitNode;
+                // the keys diverge, so we need to branch from splitNode
+                else
+                    splitNode.Children[suffix[i]] = node = new Node(suffix[i..]);
+                
+                node.IsTerminal = true;
+                return true;
             }
+
             var suffixNode = new Node(suffix)
             {
                 IsTerminal = true
@@ -177,52 +191,6 @@ public partial class RadixTree : PrefixTree
             node = node.Children[c] = suffixNode;
             return true;
         }
- 
-        // we use while instead of if so we can break
-        while (node != null && !node.IsDeleted && node.Children.TryGetValue(c, out nextNode))
-        {
-            var label = nextNode.Label.AsSpan();
-            var i = GetCommonPrefixLength(label, suffix);
-
-            // suffix starts with label?
-            if (i == label.Length)
-            {
-                // if the keys are equal, the key has already been inserted
-                if (i == suffix.Length)
-                {
-                    if (overwrite)
-                        nextNode.SetValue(value);
-
-                    return nextNode;
-                }
-
-                // structure has changed since last; try again
-                break;
-            }
-
-            var splitNode = new Node(suffix[..i])
-            {
-                Children = { [label[i]] = new Node(label[i..], nextNode) }
-            };
-
-            Node outNode;
-
-            // label starts with suffix, so we can return splitNode
-            if (i == suffix.Length)
-                outNode = splitNode;
-            // the keys diverge, so we need to branch from splitNode
-            else
-                splitNode.Children[suffix[i]] = outNode = new Node(suffix[i..]);
-
-            outNode.SetValue(value);
-            node.Children[c] = splitNode;
-
-            return outNode;
-        }
-
-        // we failed to add a node, so we have to retry;
-        // the recursive call is placed at the end to enable tail-recursion optimization
-        return GetOrAddNode(key, value, overwrite);
     }
 
     /// <summary>
@@ -253,7 +221,7 @@ public partial class RadixTree : PrefixTree
                 if (node.IsTerminal)
                     break;
 
-                // the node is either already removed, or it is a branching node
+                // the node is a branching node
                 return false;
             }
 
@@ -265,47 +233,26 @@ public partial class RadixTree : PrefixTree
             parent = node;
         }
 
-        if (node == null)
-            return false;
-
-        // another thread has written a value to the node while we were waiting
-        if (node.IsTerminal)
-            return false;
-
         var c = node.Label[0];
         var nChildren = node.Children.Count;
 
         // if the node has no children, we can just remove it
         if (nChildren == 0)
         {
-            // was removed or replaced by another thread
-            if (!parent.Children.TryGetValue(c, out var n) || n != node)
-                return false;
-
             parent.Children.Remove(c);
-            node.IsTerminal = false;
 
             // since we removed a node, we may be able to merge a lone sibling with the parent
             if (parent.Children.Count == 1 && grandparent != null && !parent.IsTerminal)
             {
                 c = parent.Label[0];
-
-                if (!grandparent.Children.TryGetValue(c, out n) || n != parent || parent.IsTerminal)
-                    return false;
-
                 var child = parent.Children.First().Value;
                 grandparent.Children[c] = new Node(parent.Label + child.Label, child);
-                parent.IsTerminal = false;
             }
         }
         // if there is a single child, we can merge it with node
         else if (nChildren == 1)
         {
-            // was removed or replaced by another thread
-            if (!parent.Children.TryGetValue(c, out var n) || n != node)
-                return false;
-
-            var child = node.Children.FirstOrDefault().Value;
+            var child = node.Children.First().Value;
             parent.Children[c] = new Node(node.Label + child.Label, child);
             node.IsTerminal = false;
         }

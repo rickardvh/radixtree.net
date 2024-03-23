@@ -1,9 +1,10 @@
-module Majako.Collections.RadixTree.Tests.ConcurrentTrieTests
+module Majako.Collections.RadixTree.Tests.Dictionary.ConcurrentTrieTests
 
 open Xunit
 open Swensen.Unquote
-open Majako.Collections.RadixTree.Concurrent
 open System
+open Majako.Collections.RadixTree.Concurrent
+open Majako.Collections.RadixTree.Tests
 
 [<Fact>]
 let ``Can add and get value`` () =

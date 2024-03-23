@@ -1,9 +1,10 @@
-module Majako.Collections.RadixTree.Tests.ConcurrentTriePropertyTests
+module Majako.Collections.RadixTree.Tests.Dictionary.ConcurrentTriePropertyTests
 
 open FsCheck
 open FsCheck.Xunit
 open Majako.Collections.RadixTree.Concurrent
 open System.Collections.Generic
+open Majako.Collections.RadixTree.Tests
 
 type TestItems = list<NonEmptyString * int>
 

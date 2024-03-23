@@ -1,4 +1,4 @@
-﻿module Majako.Collections.RadixTree.Tests.Profiling
+﻿module Majako.Collections.RadixTree.Tests.Dictionary.Profiling
 
 open System.Diagnostics
 open Xunit
