@@ -15,6 +15,7 @@
     <Compile Include="Dictionary/ConcurrentTriePropertyTests.fs" />
     <Compile Include="Dictionary/Profiling.fs" />
     <Compile Include="Dictionary/RadixTreePropertyTests.fs" />
+    <Compile Include="Dictionary/RadixTreeTests.fs" />
     <Compile Include="Set/RadixTreeTests.fs" />
     <Compile Include="Set/RadixTreePropertyTests.fs" />
   </ItemGroup>
