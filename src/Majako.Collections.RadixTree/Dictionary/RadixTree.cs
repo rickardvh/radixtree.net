@@ -102,12 +102,7 @@ public partial class RadixTree<TValue> : PrefixTree<TValue>
             if (n.TryGetValue(out var value))
                 yield return new KeyValuePair<string, TValue>(s, value);
 
-            List<BaseNode> children;
-
-            // we can't know what is done during enumeration, so we need to make a copy of the children
-            children = [.. n.Children.Values];
-
-            foreach (var child in children)
+            foreach (var child in n.Children.Values)
                 foreach (var kv in traverse(child, s + child.Label))
                     yield return kv;
         }
