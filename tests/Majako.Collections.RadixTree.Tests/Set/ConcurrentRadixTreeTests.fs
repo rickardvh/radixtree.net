@@ -5,7 +5,12 @@ open Swensen.Unquote
 open Majako.Collections.RadixTree.Concurrent
 
 type ConcurrentRadixTreeTests() =
-    inherit PrefixTreeTestBase(fun items -> if items.IsSome then ConcurrentRadixTree items.Value else ConcurrentRadixTree())
+    inherit
+        PrefixTreeTestBase(fun items ->
+            if items.IsSome then
+                ConcurrentRadixTree items.Value
+            else
+                ConcurrentRadixTree())
 
     [<Fact>]
     let ``Does not block while enumerating`` () =
@@ -48,4 +53,3 @@ type ConcurrentRadixTreeTests() =
         Array.Parallel.iter addPrune [| 1..100 |]
 
         test <@ Seq.isEmpty sut @>
-
