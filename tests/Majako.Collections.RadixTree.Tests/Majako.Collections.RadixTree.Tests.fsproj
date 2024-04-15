@@ -22,7 +22,6 @@
     <Compile Include="Set/RadixTreePropertyTests.fs" />
     <Compile Include="Set/ConcurrentRadixTreeTests.fs" />
     <Compile Include="Set/ConcurrentRadixTreePropertyTests.fs" />
-    <Compile Include="Set/Profiling.fs" />
   </ItemGroup>
 
   <ItemGroup>
