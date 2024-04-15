@@ -391,9 +391,6 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
             _structureLock.ExitReadLock();
         }
 
-        if (node == null)
-            return false;
-
         // if we need to delete a node, the tree has to be restructured to remove empty leaves or merge
         // single children with branching node parents, and other threads may be currently on these nodes
         _structureLock.EnterWriteLock();
