@@ -10,12 +10,24 @@ public abstract partial class PrefixTree : IPrefixTree
     public virtual int Count => Search(string.Empty).Count();
     public virtual bool IsReadOnly => false;
 
-    public abstract bool Add(string item);
-    public abstract void Clear();
-    public abstract bool Contains(string item);
+    protected abstract IPrefixTree<byte> BackingDict { get; }
+
     public abstract IPrefixTree Prune(string prefix);
-    public abstract bool Remove(string item);
-    public abstract IEnumerable<string> Search(string prefix);
+
+    /// <inheritdoc/>
+    public virtual bool Add(string key) => BackingDict.TryAdd(key, default);
+
+    /// <inheritdoc/>
+    public virtual bool Contains(string item) => BackingDict.ContainsKey(item);
+
+    /// <inheritdoc/>
+    public virtual void Clear() => BackingDict.Clear();
+
+    /// <inheritdoc/>
+    public virtual bool Remove(string key) => BackingDict.Remove(key);
+
+    /// <inheritdoc/>
+    public virtual IEnumerable<string> Search(string prefix) => BackingDict.Search(prefix).Select(kv => kv.Key);
 
     public virtual void IntersectWith(IEnumerable<string> other)
     {

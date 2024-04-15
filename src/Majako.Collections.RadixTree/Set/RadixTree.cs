@@ -9,6 +9,12 @@ public partial class RadixTree : PrefixTree
 
     protected readonly RadixTree<byte> _backingDict;
 
+    #region Properties
+
+    protected override IPrefixTree<byte> BackingDict => _backingDict;
+
+    #endregion
+
     #endregion
 
     #region Constructors
@@ -44,21 +50,6 @@ public partial class RadixTree : PrefixTree
     #region Methods
 
     #region Public
-
-    /// <inheritdoc/>
-    public override bool Add(string key) => _backingDict.TryAdd(key, default);
-
-    /// <inheritdoc/>
-    public override bool Contains(string item) => _backingDict.ContainsKey(item);
-
-    /// <inheritdoc/>
-    public override void Clear() => _backingDict.Clear();
-
-    /// <inheritdoc/>
-    public override bool Remove(string key) => _backingDict.Remove(key);
-
-    /// <inheritdoc/>
-    public override IEnumerable<string> Search(string prefix) => _backingDict.Search(prefix).Select(kv => kv.Key);
 
     /// <inheritdoc/>
     public override IPrefixTree Prune(string prefix) => new RadixTree(_backingDict.Prune(prefix) as RadixTree<byte>);

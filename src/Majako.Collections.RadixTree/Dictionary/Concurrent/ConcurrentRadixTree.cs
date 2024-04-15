@@ -121,6 +121,8 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
     /// <inheritdoc/>
     public override IPrefixTree<TValue> Prune(string prefix)
     {
+        ArgumentNullException.ThrowIfNull(prefix);
+
         var succeeded = SearchOrPrune(prefix, true, out var subtreeRoot);
         return succeeded ? new ConcurrentRadixTree<TValue>(subtreeRoot) : [];
     }
@@ -138,14 +140,14 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
         return _locks.GetLock(node.Children);
     }
 
-    protected virtual bool Find(string key, BaseNode subtreeRoot, out BaseNode node)
+    protected virtual bool Find(ReadOnlySpan<char> key, BaseNode subtreeRoot, out BaseNode node)
     {
         node = subtreeRoot;
 
         if (key.Length == 0)
             return true;
 
-        var suffix = key.AsSpan();
+        var suffix = key;
 
         while (true)
         {
@@ -403,10 +405,8 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
         return true;
     }
 
-    protected bool SearchOrPrune(string prefix, bool prune, out BaseNode subtreeRoot)
+    protected bool SearchOrPrune(ReadOnlySpan<char> prefix, bool prune, out BaseNode subtreeRoot)
     {
-        ArgumentNullException.ThrowIfNull(prefix);
-
         if (prefix.Length == 0)
         {
             subtreeRoot = _root;
@@ -418,12 +418,11 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
         subtreeRoot = default;
         var node = _root;
         var parent = node;
-        var span = prefix.AsSpan();
         var i = 0;
 
-        while (i < span.Length)
+        while (i < prefix.Length)
         {
-            var c = span[i];
+            var c = prefix[i];
             var parentLock = GetLock(parent);
             using var _ = new LockWrapper(parentLock, LockType.UpgradeableRead);
 
@@ -431,11 +430,11 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
                 return false;
 
             var label = node.Label.AsSpan();
-            var k = GetCommonPrefixLength(span[i..], label);
+            var k = GetCommonPrefixLength(prefix[i..], label);
 
-            if (k == span.Length - i)
+            if (k == prefix.Length - i)
             {
-                subtreeRoot = new Node(prefix[..i] + node.Label, node);
+                subtreeRoot = new Node(string.Concat(prefix[..i], label), node);
                 if (!prune)
                     return true;
 
