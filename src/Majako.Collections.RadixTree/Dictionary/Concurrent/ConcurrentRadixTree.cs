@@ -138,63 +138,6 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
         return _locks.GetLock(node.Children);
     }
 
-    protected enum LockType
-    {
-        Read,
-        Write,
-        UpgradeableRead
-    }
-
-    protected readonly struct LockWrapper : IDisposable
-    {
-        private readonly ReaderWriterLockSlim _lock;
-        private readonly LockType? _acquiredLockType;
-
-        public LockWrapper(ReaderWriterLockSlim @lock, LockType lockType)
-        {
-            _lock = @lock;
-            switch (lockType)
-            {
-                case LockType.Read:
-                    if (@lock.IsReadLockHeld || @lock.IsWriteLockHeld || @lock.IsUpgradeableReadLockHeld)
-                        break;
-                    @lock.EnterReadLock();
-                    _acquiredLockType = LockType.Read;
-                    break;
-                case LockType.Write:
-                    if (@lock.IsWriteLockHeld)
-                        break;
-                    @lock.EnterWriteLock();
-                    _acquiredLockType = LockType.Write;
-                    break;
-                case LockType.UpgradeableRead:
-                    if (@lock.IsUpgradeableReadLockHeld || @lock.IsWriteLockHeld)
-                        break;
-                    @lock.EnterUpgradeableReadLock();
-                    _acquiredLockType = LockType.UpgradeableRead;
-                    break;
-            }
-        }
-
-        public void Dispose()
-        {
-            switch (_acquiredLockType)
-            {
-                case LockType.Read:
-                    _lock.ExitReadLock();
-                    break;
-                case LockType.Write:
-                    _lock.ExitWriteLock();
-                    break;
-                case LockType.UpgradeableRead:
-                    _lock.ExitUpgradeableReadLock();
-                    break;
-                default:
-                    break;
-            }
-        }
-    }
-
     protected virtual bool Find(string key, BaseNode subtreeRoot, out BaseNode node)
     {
         node = subtreeRoot;
@@ -286,57 +229,67 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
         // if we need to restructure the tree, we do it after releasing and reacquiring the lock.
         // however, another thread may have restructured around the node we're on in the meantime,
         // and in that case we need to retry the insertion
-        using (new LockWrapper(_structureLock, LockType.Write))
-        {
-            using var _ = new LockWrapper(nodeLock, LockType.UpgradeableRead);
-            // we use while instead of if so we can break
-            while (node != null && !node.IsDeleted && node.Children.TryGetValue(c, out nextNode))
-            {
-                var label = nextNode.Label.AsSpan();
-                var i = GetCommonPrefixLength(label, suffix);
-
-                // suffix starts with label?
-                if (i == label.Length)
-                {
-                    // if the keys are equal, the key has already been inserted
-                    if (i == suffix.Length)
-                    {
-                        if (overwrite)
-                            nextNode.SetValue(value);
-
-                        return nextNode;
-                    }
-
-                    // structure has changed since last; try again
-                    break;
-                }
-
-                var splitNode = new Node(suffix[..i])
-                {
-                    Children = { [label[i]] = new Node(label[i..], nextNode) }
-                };
-
-                BaseNode outNode;
-
-                // label starts with suffix, so we can return splitNode
-                if (i == suffix.Length)
-                    outNode = splitNode;
-                // the keys diverge, so we need to branch from splitNode
-                else
-                    splitNode.Children[suffix[i]] = outNode = new Node(suffix[i..]);
-
-                outNode.SetValue(value);
-
-                using (new LockWrapper(nodeLock, LockType.Write))
-                    node.Children[c] = splitNode;
-
-                return outNode;
-            }
-        }
+        if (AddAndRestructure(node, suffix, overwrite, value, out var addedNode))
+            return addedNode;
 
         // we failed to add a node, so we have to retry;
         // the recursive call is placed at the end to enable tail-recursion optimization
         return GetOrAddNode(key, value, overwrite);
+    }
+
+    protected bool AddAndRestructure(BaseNode node, ReadOnlySpan<char> suffix, bool overwrite, TValue value, out BaseNode addedNode)
+    {
+        addedNode = default;
+
+        using var _ = new LockWrapper(_structureLock, LockType.Write);
+        var nodeLock = GetLock(node);
+        using var _nodeLockWrapper = new LockWrapper(nodeLock, LockType.UpgradeableRead);
+
+        var c = suffix[0];
+
+        if (node == null || node.IsDeleted || !node.Children.TryGetValue(c, out var nextNode))
+            return false;
+        var label = nextNode.Label.AsSpan();
+        var i = GetCommonPrefixLength(label, suffix);
+
+        // suffix starts with label?
+        if (i == label.Length)
+        {
+            // if the keys are equal, the key has already been inserted
+            if (i == suffix.Length)
+            {
+                if (overwrite)
+                    nextNode.SetValue(value);
+
+                addedNode = nextNode;
+                return true;
+            }
+
+            // structure has changed since last
+            return false;
+        }
+
+        var splitNode = new Node(suffix[..i])
+        {
+            Children = { [label[i]] = new Node(label[i..], nextNode) }
+        };
+
+        BaseNode outNode;
+
+        // label starts with suffix, so we can return splitNode
+        if (i == suffix.Length)
+            outNode = splitNode;
+        // the keys diverge, so we need to branch from splitNode
+        else
+            splitNode.Children[suffix[i]] = outNode = new Node(suffix[i..]);
+
+        outNode.SetValue(value);
+
+        using (new LockWrapper(nodeLock, LockType.Write))
+            node.Children[c] = splitNode;
+
+        addedNode = outNode;
+        return true;
     }
 
     /// <summary>
@@ -426,7 +379,7 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
             // since we removed a node, we may be able to merge a lone sibling with the parent
             if (parent.Children.Count == 1 && grandparent != null && !parent.HasValue)
             {
-                using var _grandparentLockWrapper = new LockWrapper(parentLock, LockType.Write);
+                using var _grandparentLockWrapper = new LockWrapper(grandparentLock, grandparentLock == parentLock ? LockType.None : LockType.Write);
                 if (!grandparent.Children.TryGetValue(c, out n) || n != parent || parent.HasValue)
                     return false;
 

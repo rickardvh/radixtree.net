@@ -16,7 +16,8 @@ type PrefixTreePropertyTestBase(ctor: (string seq -> IPrefixTree)) =
     [<Property>]
     let ``An item should exist after being added`` (items: TestItems, item: NonEmptyString) =
         let sut = makeTrie items
-        (sut.Add item.Get) && (sut.Contains item.Get)
+        sut.Add item.Get |> ignore
+        sut.Contains item.Get
 
     [<Property>]
     let ``Adding one item should increase count by exactly 1 if it is not in the trie, and 0 otherwise``

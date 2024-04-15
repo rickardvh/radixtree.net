@@ -151,13 +151,12 @@ public partial class RadixTree<TValue> : PrefixTree<TValue>
         var node = _root;
         var suffix = key;
         char c;
-        BaseNode nextNode;
 
         while (true)
         {
             c = suffix[0];
 
-            if (node.Children.TryGetValue(c, out nextNode))
+            if (node.Children.TryGetValue(c, out BaseNode nextNode))
             {
                 var label = nextNode.Label.AsSpan();
                 var i = GetCommonPrefixLength(label, suffix);
