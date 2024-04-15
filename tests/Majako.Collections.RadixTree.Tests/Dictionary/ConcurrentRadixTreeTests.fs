@@ -8,6 +8,15 @@ type ConcurrentRadixTreeTests() =
     inherit PrefixTreeTestBase(fun () -> ConcurrentRadixTree<int>())
 
     [<Fact>]
+    let ``Does not block while enumerating`` () =
+        let sut = ConcurrentRadixTree<int>()
+        sut.Add("a", 0)
+        sut.Add("ab", 0)
+
+        for item in sut.Keys do
+            sut.Remove item |> ignore
+
+    [<Fact>]
     let ``Does not break during parallel add remove`` () =
         let sut = ConcurrentRadixTree<int>()
 

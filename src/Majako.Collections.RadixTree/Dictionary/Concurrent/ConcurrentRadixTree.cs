@@ -1,4 +1,6 @@
-﻿namespace Majako.Collections.RadixTree.Concurrent;
+﻿using System.Runtime.CompilerServices;
+
+namespace Majako.Collections.RadixTree.Concurrent;
 
 /// <summary>
 /// A thread-safe implementation of a radix tree
@@ -104,19 +106,9 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
             if (n.TryGetValue(out var value))
                 yield return new KeyValuePair<string, TValue>(s, value);
 
-            var nLock = GetLock(n);
-            nLock.EnterReadLock();
-            List<BaseNode> children;
-
-            try
-            {
-                // we can't know what is done during enumeration, so we need to make a copy of the children
+            IList<BaseNode> children;
+            using (new LockWrapper(GetLock(n), LockType.Read))
                 children = [.. n.Children.Values];
-            }
-            finally
-            {
-                nLock.ExitReadLock();
-            }
 
             foreach (var child in children)
                 foreach (var kv in traverse(child, s + child.Label))
@@ -129,6 +121,8 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
     /// <inheritdoc/>
     public override IPrefixTree<TValue> Prune(string prefix)
     {
+        ArgumentNullException.ThrowIfNull(prefix);
+
         var succeeded = SearchOrPrune(prefix, true, out var subtreeRoot);
         return succeeded ? new ConcurrentRadixTree<TValue>(subtreeRoot) : [];
     }
@@ -146,28 +140,21 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
         return _locks.GetLock(node.Children);
     }
 
-    protected virtual bool Find(string key, BaseNode subtreeRoot, out BaseNode node)
+    protected virtual bool Find(ReadOnlySpan<char> key, BaseNode subtreeRoot, out BaseNode node)
     {
         node = subtreeRoot;
 
         if (key.Length == 0)
             return true;
 
-        var suffix = key.AsSpan();
+        var suffix = key;
 
         while (true)
         {
-            var nodeLock = GetLock(node);
-            nodeLock.EnterReadLock();
-
-            try
+            using (new LockWrapper(GetLock(node), LockType.Read))
             {
                 if (!node.Children.TryGetValue(suffix[0], out node))
                     return false;
-            }
-            finally
-            {
-                nodeLock.ExitReadLock();
             }
 
             var span = node.Label.AsSpan();
@@ -190,17 +177,14 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
         ReaderWriterLockSlim nodeLock;
         char c;
         BaseNode nextNode;
-        _structureLock.EnterReadLock();
 
-        try
+        using (new LockWrapper(_structureLock, LockType.Read))
         {
             while (true)
             {
                 c = suffix[0];
                 nodeLock = GetLock(node);
-                nodeLock.EnterUpgradeableReadLock();
-
-                try
+                using (new LockWrapper(nodeLock, LockType.UpgradeableRead))
                 {
                     if (node.Children.TryGetValue(c, out nextNode))
                     {
@@ -233,99 +217,81 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
                     }
 
                     // if there is no child starting with c, we can just add and return one
-                    nodeLock.EnterWriteLock();
-
-                    try
+                    using (new LockWrapper(nodeLock, LockType.Write))
                     {
                         var suffixNode = new Node(suffix);
                         suffixNode.SetValue(value);
 
                         return node.Children[c] = suffixNode;
                     }
-                    finally
-                    {
-                        nodeLock.ExitWriteLock();
-                    }
-                }
-                finally
-                {
-                    nodeLock.ExitUpgradeableReadLock();
                 }
             }
-        }
-        finally
-        {
-            _structureLock.ExitReadLock();
         }
 
         // if we need to restructure the tree, we do it after releasing and reacquiring the lock.
         // however, another thread may have restructured around the node we're on in the meantime,
         // and in that case we need to retry the insertion
-        _structureLock.EnterWriteLock();
-        nodeLock.EnterUpgradeableReadLock();
-
-        try
-        {
-            // we use while instead of if so we can break
-            while (node != null && !node.IsDeleted && node.Children.TryGetValue(c, out nextNode))
-            {
-                var label = nextNode.Label.AsSpan();
-                var i = GetCommonPrefixLength(label, suffix);
-
-                // suffix starts with label?
-                if (i == label.Length)
-                {
-                    // if the keys are equal, the key has already been inserted
-                    if (i == suffix.Length)
-                    {
-                        if (overwrite)
-                            nextNode.SetValue(value);
-
-                        return nextNode;
-                    }
-
-                    // structure has changed since last; try again
-                    break;
-                }
-
-                var splitNode = new Node(suffix[..i])
-                {
-                    Children = { [label[i]] = new Node(label[i..], nextNode) }
-                };
-
-                BaseNode outNode;
-
-                // label starts with suffix, so we can return splitNode
-                if (i == suffix.Length)
-                    outNode = splitNode;
-                // the keys diverge, so we need to branch from splitNode
-                else
-                    splitNode.Children[suffix[i]] = outNode = new Node(suffix[i..]);
-
-                outNode.SetValue(value);
-                nodeLock.EnterWriteLock();
-
-                try
-                {
-                    node.Children[c] = splitNode;
-                }
-                finally
-                {
-                    nodeLock.ExitWriteLock();
-                }
-
-                return outNode;
-            }
-        }
-        finally
-        {
-            nodeLock.ExitUpgradeableReadLock();
-            _structureLock.ExitWriteLock();
-        }
+        if (AddAndRestructure(node, suffix, overwrite, value, out var addedNode))
+            return addedNode;
 
         // we failed to add a node, so we have to retry;
         // the recursive call is placed at the end to enable tail-recursion optimization
         return GetOrAddNode(key, value, overwrite);
+    }
+
+    protected bool AddAndRestructure(BaseNode node, ReadOnlySpan<char> suffix, bool overwrite, TValue value, out BaseNode addedNode)
+    {
+        addedNode = default;
+
+        using var _ = new LockWrapper(_structureLock, LockType.Write);
+        var nodeLock = GetLock(node);
+        using var _nodeLockWrapper = new LockWrapper(nodeLock, LockType.UpgradeableRead);
+
+        var c = suffix[0];
+
+        if (node == null || node.IsDeleted || !node.Children.TryGetValue(c, out var nextNode))
+            return false;
+        var label = nextNode.Label.AsSpan();
+        var i = GetCommonPrefixLength(label, suffix);
+
+        // suffix starts with label?
+        if (i == label.Length)
+        {
+            // if the keys are equal, the key has already been inserted
+            if (i == suffix.Length)
+            {
+                if (overwrite)
+                    nextNode.SetValue(value);
+
+                addedNode = nextNode;
+                return true;
+            }
+
+            // structure has changed since last
+            return false;
+        }
+
+        var splitNode = new Node(suffix[..i])
+        {
+            Children = { [label[i]] = new Node(label[i..], nextNode) }
+        };
+
+        BaseNode outNode;
+
+        // label starts with suffix, so we can return splitNode
+        if (i == suffix.Length)
+            outNode = splitNode;
+        // the keys diverge, so we need to branch from splitNode
+        else
+            splitNode.Children[suffix[i]] = outNode = new Node(suffix[i..]);
+
+        outNode.SetValue(value);
+
+        using (new LockWrapper(nodeLock, LockType.Write))
+            node.Children[c] = splitNode;
+
+        addedNode = outNode;
+        return true;
     }
 
     /// <summary>
@@ -340,23 +306,16 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
         BaseNode node = null, grandparent = null;
         var parent = subtreeRoot;
         var i = 0;
-        _structureLock.EnterReadLock();
-        try
+        using (new LockWrapper(_structureLock, LockType.Read))
         {
             while (i < key.Length)
             {
                 var c = key[i];
-                var parentLock = GetLock(parent);
-                parentLock.EnterReadLock();
 
-                try
+                using (new LockWrapper(GetLock(parent), LockType.Read))
                 {
                     if (!parent.Children.TryGetValue(c, out node))
                         return false;
-                }
-                finally
-                {
-                    parentLock.ExitReadLock();
                 }
 
                 var label = node.Label.AsSpan();
@@ -386,123 +345,68 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
                 parent = node;
             }
         }
-        finally
-        {
-            _structureLock.ExitReadLock();
-        }
-
-        if (node == null)
-            return false;
 
         // if we need to delete a node, the tree has to be restructured to remove empty leaves or merge
         // single children with branching node parents, and other threads may be currently on these nodes
-        _structureLock.EnterWriteLock();
+        return RemoveAndRestructure(node, parent, grandparent);
+    }
 
-        try
+    protected bool RemoveAndRestructure(BaseNode node, BaseNode parent, BaseNode grandparent = null)
+    {
+        using var _structureLockWrapper = new LockWrapper(_structureLock, LockType.Write);
+        var nodeLock = GetLock(node);
+        var parentLock = GetLock(parent);
+        var grandparentLock = grandparent != null ? GetLock(grandparent) : null;
+        var lockAlreadyHeld = nodeLock == parentLock || nodeLock == grandparentLock;
+        using var _nodeLockWrapper = new LockWrapper(nodeLock, lockAlreadyHeld ? LockType.UpgradeableRead : LockType.Read);
+
+        // another thread has written a value to the node while we were waiting
+        if (node.HasValue)
+            return false;
+
+        var c = node.Label[0];
+        var nChildren = node.Children.Count;
+
+        // if the node has no children, we can just remove it
+        if (nChildren == 0)
         {
-            var nodeLock = GetLock(node);
-            var parentLock = GetLock(parent);
-            var grandparentLock = grandparent != null ? GetLock(grandparent) : null;
-            var lockAlreadyHeld = nodeLock == parentLock || nodeLock == grandparentLock;
+            using var _parentLockWrapper = new LockWrapper(parentLock, LockType.Write);
+            // was removed or replaced by another thread
+            if (!parent.Children.TryGetValue(c, out var n) || n != node)
+                return false;
 
-            if (lockAlreadyHeld)
-                nodeLock.EnterUpgradeableReadLock();
-            else
-                nodeLock.EnterReadLock();
+            parent.Children.Remove(c);
+            node.Delete();
 
-            try
+            // since we removed a node, we may be able to merge a lone sibling with the parent
+            if (parent.Children.Count == 1 && grandparent != null && !parent.HasValue)
             {
-                // another thread has written a value to the node while we were waiting
-                if (node.HasValue)
+                using var _grandparentLockWrapper = new LockWrapper(grandparentLock, grandparentLock == parentLock ? LockType.None : LockType.Write);
+                if (!grandparent.Children.TryGetValue(c, out n) || n != parent || parent.HasValue)
                     return false;
 
-                var c = node.Label[0];
-                var nChildren = node.Children.Count;
-
-                // if the node has no children, we can just remove it
-                if (nChildren == 0)
-                {
-                    parentLock.EnterWriteLock();
-                    try
-                    {
-                        // was removed or replaced by another thread
-                        if (!parent.Children.TryGetValue(c, out var n) || n != node)
-                            return false;
-
-                        parent.Children.Remove(c);
-                        node.Delete();
-
-                        // since we removed a node, we may be able to merge a lone sibling with the parent
-                        if (parent.Children.Count == 1 && grandparent != null && !parent.HasValue)
-                        {
-                            var grandparentLockAlreadyHeld = grandparentLock == parentLock;
-
-                            if (!grandparentLockAlreadyHeld)
-                                grandparentLock.EnterWriteLock();
-
-                            try
-                            {
-                                c = parent.Label[0];
-
-                                if (!grandparent.Children.TryGetValue(c, out n) || n != parent || parent.HasValue)
-                                    return false;
-
-                                var child = parent.Children.First().Value;
-                                grandparent.Children[c] = new Node(parent.Label + child.Label, child);
-                                parent.Delete();
-                            }
-                            finally
-                            {
-                                if (!grandparentLockAlreadyHeld)
-                                    grandparentLock.ExitWriteLock();
-                            }
-                        }
-                    }
-                    finally
-                    {
-                        parentLock.ExitWriteLock();
-                    }
-                }
-                // if there is a single child, we can merge it with node
-                else if (nChildren == 1)
-                {
-                    parentLock.EnterWriteLock();
-
-                    try
-                    {
-                        // was removed or replaced by another thread
-                        if (!parent.Children.TryGetValue(c, out var n) || n != node)
-                            return false;
-
-                        var child = node.Children.FirstOrDefault().Value;
-                        parent.Children[c] = new Node(node.Label + child.Label, child);
-                        node.Delete();
-                    }
-                    finally
-                    {
-                        parentLock.ExitWriteLock();
-                    }
-                }
-            }
-            finally
-            {
-                if (lockAlreadyHeld)
-                    nodeLock.ExitUpgradeableReadLock();
-                else
-                    nodeLock.ExitReadLock();
+                var child = parent.Children.First().Value;
+                grandparent.Children[c] = new Node(parent.Label + child.Label, child);
+                parent.Delete();
             }
         }
-        finally
+        // if there is a single child, we can merge it with node
+        else if (nChildren == 1)
         {
-            _structureLock.ExitWriteLock();
+            using var _parentLockWrapper = new LockWrapper(parentLock, LockType.Write);
+            // was removed or replaced by another thread
+            if (!parent.Children.TryGetValue(c, out var n) || n != node)
+                return false;
+
+            var child = node.Children.FirstOrDefault().Value;
+            parent.Children[c] = new Node(node.Label + child.Label, child);
+            node.Delete();
         }
         return true;
     }
 
-    protected bool SearchOrPrune(string prefix, bool prune, out BaseNode subtreeRoot)
+    protected bool SearchOrPrune(ReadOnlySpan<char> prefix, bool prune, out BaseNode subtreeRoot)
     {
-        ArgumentNullException.ThrowIfNull(prefix);
-
         if (prefix.Length == 0)
         {
             subtreeRoot = _root;
@@ -514,54 +418,34 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
         subtreeRoot = default;
         var node = _root;
         var parent = node;
-        var span = prefix.AsSpan();
         var i = 0;
 
-        while (i < span.Length)
+        while (i < prefix.Length)
         {
-            var c = span[i];
+            var c = prefix[i];
             var parentLock = GetLock(parent);
-            parentLock.EnterUpgradeableReadLock();
+            using var _ = new LockWrapper(parentLock, LockType.UpgradeableRead);
 
-            try
+            if (!parent.Children.TryGetValue(c, out node))
+                return false;
+
+            var label = node.Label.AsSpan();
+            var k = GetCommonPrefixLength(prefix[i..], label);
+
+            if (k == prefix.Length - i)
             {
-                if (!parent.Children.TryGetValue(c, out node))
-                    return false;
+                subtreeRoot = new Node(string.Concat(prefix[..i], label), node);
+                if (!prune)
+                    return true;
 
-                var label = node.Label.AsSpan();
-                var k = GetCommonPrefixLength(span[i..], label);
-
-                if (k == span.Length - i)
-                {
-                    subtreeRoot = new Node(prefix[..i] + node.Label, node);
-                    if (!prune)
-                        return true;
-
-                    parentLock.EnterWriteLock();
-
-                    try
-                    {
-                        if (parent.Children.Remove(c, out node))
-                            return true;
-                    }
-                    finally
-                    {
-                        parentLock.ExitWriteLock();
-                    }
-
-                    // was removed by another thread
-                    return false;
-                }
-
-                if (k < label.Length)
-                    return false;
-
-                i += label.Length;
+                using (new LockWrapper(parentLock, LockType.Write))
+                    return parent.Children.Remove(c, out node);
             }
-            finally
-            {
-                parentLock.ExitUpgradeableReadLock();
-            }
+
+            if (k < label.Length)
+                return false;
+
+            i += label.Length;
 
             parent = node;
         }

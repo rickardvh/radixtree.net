@@ -102,12 +102,7 @@ public partial class RadixTree<TValue> : PrefixTree<TValue>
             if (n.TryGetValue(out var value))
                 yield return new KeyValuePair<string, TValue>(s, value);
 
-            List<BaseNode> children;
-
-            // we can't know what is done during enumeration, so we need to make a copy of the children
-            children = [.. n.Children.Values];
-
-            foreach (var child in children)
+            foreach (var child in n.Children.Values)
                 foreach (var kv in traverse(child, s + child.Label))
                     yield return kv;
         }
@@ -118,6 +113,8 @@ public partial class RadixTree<TValue> : PrefixTree<TValue>
     /// <inheritdoc/>
     public override IPrefixTree<TValue> Prune(string prefix)
     {
+        ArgumentNullException.ThrowIfNull(prefix);
+
         var succeeded = SearchOrPrune(prefix, true, out var subtreeRoot);
         return succeeded ? new RadixTree<TValue>(subtreeRoot) : [];
     }
@@ -156,13 +153,12 @@ public partial class RadixTree<TValue> : PrefixTree<TValue>
         var node = _root;
         var suffix = key;
         char c;
-        BaseNode nextNode;
 
         while (true)
         {
             c = suffix[0];
 
-            if (node.Children.TryGetValue(c, out nextNode))
+            if (node.Children.TryGetValue(c, out BaseNode nextNode))
             {
                 var label = nextNode.Label.AsSpan();
                 var i = GetCommonPrefixLength(label, suffix);
@@ -284,10 +280,8 @@ public partial class RadixTree<TValue> : PrefixTree<TValue>
         return true;
     }
 
-    protected bool SearchOrPrune(string prefix, bool prune, out BaseNode subtreeRoot)
+    protected bool SearchOrPrune(ReadOnlySpan<char> prefix, bool prune, out BaseNode subtreeRoot)
     {
-        ArgumentNullException.ThrowIfNull(prefix);
-
         if (prefix.Length == 0)
         {
             subtreeRoot = _root;
@@ -299,22 +293,21 @@ public partial class RadixTree<TValue> : PrefixTree<TValue>
         subtreeRoot = default;
         var node = _root;
         var parent = node;
-        var span = prefix.AsSpan();
         var i = 0;
 
-        while (i < span.Length)
+        while (i < prefix.Length)
         {
-            var c = span[i];
+            var c = prefix[i];
 
             if (!parent.Children.TryGetValue(c, out node))
                 return false;
 
             var label = node.Label.AsSpan();
-            var k = GetCommonPrefixLength(span[i..], label);
+            var k = GetCommonPrefixLength(prefix[i..], label);
 
-            if (k == span.Length - i)
+            if (k == prefix.Length - i)
             {
-                subtreeRoot = new Node(prefix[..i] + node.Label, node);
+                subtreeRoot = new Node(string.Concat(prefix[..i], label), node);
                 return !prune || parent.Children.Remove(c, out _);
             }
 

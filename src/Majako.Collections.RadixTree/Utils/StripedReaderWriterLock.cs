@@ -36,10 +36,7 @@ public class StripedReaderWriterLock
     /// <summary>
     /// Gets a lock on the object
     /// </summary>
-    public ReaderWriterLockSlim GetLock(object obj)
-    {
-        return _locks[obj.GetHashCode() % _locks.Length];
-    }
+    public ReaderWriterLockSlim GetLock(object obj) => _locks[obj.GetHashCode() % _locks.Length];
 
     #endregion
 }
