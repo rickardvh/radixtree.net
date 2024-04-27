@@ -36,7 +36,7 @@ public partial class RadixTree<TValue> : PrefixTree<TValue>
     /// <param name="subtreeRoot">The root of the subtree</param>
     protected RadixTree(BaseNode subtreeRoot)
     {
-        if (subtreeRoot.Label.Length == 0)
+        if (subtreeRoot.Label == string.Empty)
             _root = subtreeRoot;
         else
             _root.Children[subtreeRoot.Label[0]] = subtreeRoot;
@@ -54,7 +54,6 @@ public partial class RadixTree<TValue> : PrefixTree<TValue>
         ArgumentException.ThrowIfNullOrEmpty(key, nameof(key));
 
         value = default;
-
         return Find(key, _root, out var node) && node.TryGetValue(out value);
     }
 
@@ -115,22 +114,19 @@ public partial class RadixTree<TValue> : PrefixTree<TValue>
     {
         ArgumentNullException.ThrowIfNull(prefix);
 
-        var succeeded = SearchOrPrune(prefix, true, out var subtreeRoot);
-        return succeeded ? new RadixTree<TValue>(subtreeRoot) : [];
+        return SearchOrPrune(prefix, true, out var subtreeRoot) ? new RadixTree<TValue>(subtreeRoot) : [];
     }
 
     #endregion
 
-    protected virtual bool Find(string key, BaseNode subtreeRoot, out BaseNode node)
+    protected virtual bool Find(ReadOnlySpan<char> key, BaseNode subtreeRoot, out BaseNode node)
     {
         node = subtreeRoot;
 
         if (key.Length == 0)
             return true;
 
-        var suffix = key.AsSpan();
-
-        while (true)
+        for (var suffix = key; ;)
         {
             if (!node.Children.TryGetValue(suffix[0], out node))
                 return false;
@@ -221,9 +217,8 @@ public partial class RadixTree<TValue> : PrefixTree<TValue>
     {
         BaseNode node = null, grandparent = null;
         var parent = subtreeRoot;
-        var i = 0;
 
-        while (i < key.Length)
+        for (var i = 0; i < key.Length;)
         {
             if (!parent.Children.TryGetValue(key[i], out node))
                 return false;
@@ -293,9 +288,8 @@ public partial class RadixTree<TValue> : PrefixTree<TValue>
         subtreeRoot = default;
         var node = _root;
         var parent = node;
-        var i = 0;
 
-        while (i < prefix.Length)
+        for (var i = 0; i < prefix.Length; parent = node)
         {
             var c = prefix[i];
 
@@ -315,8 +309,6 @@ public partial class RadixTree<TValue> : PrefixTree<TValue>
                 return false;
 
             i += label.Length;
-
-            parent = node;
         }
 
         return false;

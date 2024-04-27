@@ -6,10 +6,9 @@ open System
 open Xunit.Abstractions
 open Majako.Collections.RadixTree.Tests
 
-type Profiling(output: ITestOutputHelper) =
+type ConcurrentRadixTreeProfiling(output: ITestOutputHelper) =
     [<Literal>]
     let SKIP: string = "Profiling disabled" // set to null to enable profiling
-    // let SKIP: string = null // set to null to enable profiling
 
     let profile = profile output
 

@@ -36,7 +36,10 @@ public partial class ConcurrentRadixTree : PrefixTree
     /// Initializes a new instance of <see cref="ConcurrentRadixTree" /> with the given backing dictionary
     /// </summary>
     /// <param name="backingDict">The backing dictionary</param>
-    protected ConcurrentRadixTree(ConcurrentRadixTree<byte> backingDict) => _backingDict = backingDict;
+    protected ConcurrentRadixTree(ConcurrentRadixTree<byte> backingDict)
+    {
+        _backingDict = backingDict;
+    }
 
     #endregion
 

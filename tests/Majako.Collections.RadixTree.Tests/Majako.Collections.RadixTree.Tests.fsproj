@@ -13,15 +13,16 @@
     <Compile Include="Dictionary/PrefixTreePropertyTestBase.fs" />
     <Compile Include="Dictionary/ConcurrentRadixTreeTests.fs" />
     <Compile Include="Dictionary/ConcurrentRadixTreePropertyTests.fs" />
-    <Compile Include="Dictionary/Profiling.fs" />
     <Compile Include="Dictionary/RadixTreePropertyTests.fs" />
     <Compile Include="Dictionary/RadixTreeTests.fs" />
+    <Compile Include="Dictionary/ConcurrentRadixTreeProfiling.fs" />
     <Compile Include="Set/PrefixTreeTestBase.fs" />
     <Compile Include="Set/PrefixTreePropertyTestBase.fs" />
     <Compile Include="Set/RadixTreeTests.fs" />
     <Compile Include="Set/RadixTreePropertyTests.fs" />
     <Compile Include="Set/ConcurrentRadixTreeTests.fs" />
     <Compile Include="Set/ConcurrentRadixTreePropertyTests.fs" />
+    <Compile Include="Dictionary/RadixTreeProfiling.fs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -40,7 +40,7 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
     /// <param name="subtreeRoot">The root of the subtree</param>
     protected ConcurrentRadixTree(BaseNode subtreeRoot)
     {
-        if (subtreeRoot.Label.Length == 0)
+        if (subtreeRoot.Label == string.Empty)
             _root = subtreeRoot;
         else
             _root.Children[subtreeRoot.Label[0]] = subtreeRoot;
@@ -107,6 +107,7 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
                 yield return new KeyValuePair<string, TValue>(s, value);
 
             IList<BaseNode> children;
+            // we can't know what is done during enumeration, so we need to make a copy of the children
             using (new LockWrapper(GetLock(n), LockType.Read))
                 children = [.. n.Children.Values];
 
@@ -123,8 +124,7 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
     {
         ArgumentNullException.ThrowIfNull(prefix);
 
-        var succeeded = SearchOrPrune(prefix, true, out var subtreeRoot);
-        return succeeded ? new ConcurrentRadixTree<TValue>(subtreeRoot) : [];
+        return SearchOrPrune(prefix, true, out var subtreeRoot) ? new ConcurrentRadixTree<TValue>(subtreeRoot) : [];
     }
 
     #endregion
@@ -135,10 +135,7 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
     /// <remarks>
     /// May return the same lock for two different nodes, so the user needs to check to avoid lock recursion exceptions
     /// </remarks>
-    protected virtual ReaderWriterLockSlim GetLock(BaseNode node)
-    {
-        return _locks.GetLock(node.Children);
-    }
+    protected virtual ReaderWriterLockSlim GetLock(BaseNode node) => _locks.GetLock(node.Children);
 
     protected virtual bool Find(ReadOnlySpan<char> key, BaseNode subtreeRoot, out BaseNode node)
     {
@@ -147,9 +144,7 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
         if (key.Length == 0)
             return true;
 
-        var suffix = key;
-
-        while (true)
+        for (var suffix = key; ;)
         {
             using (new LockWrapper(GetLock(node), LockType.Read))
             {
@@ -176,7 +171,6 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
         var suffix = key;
         ReaderWriterLockSlim nodeLock;
         char c;
-        BaseNode nextNode;
 
         using (new LockWrapper(_structureLock, LockType.Read))
         {
@@ -186,7 +180,7 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
                 nodeLock = GetLock(node);
                 using (new LockWrapper(nodeLock, LockType.UpgradeableRead))
                 {
-                    if (node.Children.TryGetValue(c, out nextNode))
+                    if (node.Children.TryGetValue(c, out BaseNode nextNode))
                     {
                         var label = nextNode.Label.AsSpan();
                         var i = GetCommonPrefixLength(label, suffix);
@@ -305,16 +299,14 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
     {
         BaseNode node = null, grandparent = null;
         var parent = subtreeRoot;
-        var i = 0;
         using (new LockWrapper(_structureLock, LockType.Read))
         {
-            while (i < key.Length)
+            for (var i = 0; i < key.Length;)
             {
-                var c = key[i];
 
                 using (new LockWrapper(GetLock(parent), LockType.Read))
                 {
-                    if (!parent.Children.TryGetValue(c, out node))
+                    if (!parent.Children.TryGetValue(key[i], out node))
                         return false;
                 }
 
@@ -418,9 +410,8 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
         subtreeRoot = default;
         var node = _root;
         var parent = node;
-        var i = 0;
 
-        while (i < prefix.Length)
+        for (var i = 0; i < prefix.Length; parent = node)
         {
             var c = prefix[i];
             var parentLock = GetLock(parent);
@@ -446,8 +437,6 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
                 return false;
 
             i += label.Length;
-
-            parent = node;
         }
 
         return false;
