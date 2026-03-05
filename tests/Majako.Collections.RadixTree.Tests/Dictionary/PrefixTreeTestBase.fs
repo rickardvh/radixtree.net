@@ -17,7 +17,11 @@ type PrefixTreeTestBase(ctor: unit -> IPrefixTree<int>) =
         let found, value = sut.TryGetValue "a"
         test <@ found @>
         value =! 1
-        sut.Add("a", 2)
+        raises<ArgumentException> <@ sut.Add("a", 2) @>
+        let found, value = sut.TryGetValue "a"
+        test <@ found @>
+        value =! 1
+        sut["a"] <- 2
         let found, value = sut.TryGetValue "a"
         test <@ found @>
         value =! 2
@@ -143,6 +147,20 @@ type PrefixTreeTestBase(ctor: unit -> IPrefixTree<int>) =
         let subtree = sut.Prune "c"
         subtree.Keys ==! []
         sut.Keys ==! [ "a"; "b"; "ab"; "aa"; "abc"; "abb"; "bba"; "bbb" ]
+
+    [<Fact>]
+    let ``Prune none returns an empty mutable subtree`` () =
+        let sut = ctor ()
+        sut.Add("a", 1)
+
+        let subtree = sut.Prune "z"
+        subtree.Keys ==! []
+
+        subtree.Add("z", 2)
+        let found, value = subtree.TryGetValue "z"
+        test <@ found @>
+        value =! 2
+        test <@ not (sut.ContainsKey "z") @>
 
     [<Fact>]
     let ``Can search`` () =

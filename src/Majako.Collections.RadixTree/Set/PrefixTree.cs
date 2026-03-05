@@ -7,7 +7,7 @@ namespace Majako.Collections.RadixTree;
 /// </summary>
 public abstract partial class PrefixTree : IPrefixTree
 {
-    public virtual int Count => Search(string.Empty).Count();
+    public virtual int Count => BackingDict.Count;
     public virtual bool IsReadOnly => false;
 
     protected abstract IPrefixTree<byte> BackingDict { get; }
@@ -15,7 +15,20 @@ public abstract partial class PrefixTree : IPrefixTree
     public abstract IPrefixTree Prune(string prefix);
 
     /// <inheritdoc/>
-    public virtual bool Add(string key) => BackingDict.TryAdd(key, default);
+    public virtual bool Add(string key)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(key, nameof(key));
+
+        try
+        {
+            BackingDict.Add(key, default);
+            return true;
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+    }
 
     /// <inheritdoc/>
     public virtual bool Contains(string item) => BackingDict.ContainsKey(item);
@@ -31,6 +44,8 @@ public abstract partial class PrefixTree : IPrefixTree
 
     public virtual void IntersectWith(IEnumerable<string> other)
     {
+        ArgumentNullException.ThrowIfNull(other);
+
         var set = new HashSet<string>(other);
         var toRemove = this.Where(x => !set.Contains(x)).ToList();
         ExceptWith(toRemove);
@@ -38,6 +53,8 @@ public abstract partial class PrefixTree : IPrefixTree
 
     public virtual bool IsProperSubsetOf(IEnumerable<string> other)
     {
+        ArgumentNullException.ThrowIfNull(other);
+
         var set = new HashSet<string>(other);
         var count = 0;
 
@@ -53,6 +70,8 @@ public abstract partial class PrefixTree : IPrefixTree
 
     public virtual bool IsProperSupersetOf(IEnumerable<string> other)
     {
+        ArgumentNullException.ThrowIfNull(other);
+
         var set = new HashSet<string>(other);
         var count = 0;
 
@@ -68,41 +87,50 @@ public abstract partial class PrefixTree : IPrefixTree
 
     public virtual bool IsSubsetOf(IEnumerable<string> other)
     {
+        ArgumentNullException.ThrowIfNull(other);
+
         var set = new HashSet<string>(other);
         return this.All(set.Contains);
     }
 
     public virtual bool IsSupersetOf(IEnumerable<string> other)
     {
+        ArgumentNullException.ThrowIfNull(other);
+
         var set = new HashSet<string>(other);
         return set.All(Contains);
     }
 
     public virtual void ExceptWith(IEnumerable<string> other)
     {
+        ArgumentNullException.ThrowIfNull(other);
+
         foreach (var item in other)
             Remove(item);
     }
 
     public virtual bool Overlaps(IEnumerable<string> other)
     {
+        ArgumentNullException.ThrowIfNull(other);
+
         return other.Any(Contains);
     }
 
     public virtual bool SetEquals(IEnumerable<string> other)
     {
+        ArgumentNullException.ThrowIfNull(other);
+
         var set = new HashSet<string>(other);
         return Count == set.Count && this.All(set.Contains);
     }
 
     public virtual void SymmetricExceptWith(IEnumerable<string> other)
     {
-        var set = new HashSet<string>(other);
-        var toAdd = new List<string>();
-        var toRemove = new List<string>();
+        ArgumentNullException.ThrowIfNull(other);
 
-        foreach (var item in this)
-            (set.Contains(item) ? toRemove : toAdd).Add(item);
+        var set = new HashSet<string>(other);
+        var toRemove = this.Where(set.Contains).ToList();
+        var toAdd = set.Where(item => !Contains(item)).ToList();
 
         ExceptWith(toRemove);
         UnionWith(toAdd);
@@ -110,12 +138,22 @@ public abstract partial class PrefixTree : IPrefixTree
 
     public virtual void UnionWith(IEnumerable<string> other)
     {
+        ArgumentNullException.ThrowIfNull(other);
+
         foreach (var item in other)
             Add(item);
     }
 
     public void CopyTo(string[] array, int arrayIndex)
     {
+        ArgumentNullException.ThrowIfNull(array);
+
+        if (arrayIndex < 0 || arrayIndex > array.Length)
+            throw new ArgumentOutOfRangeException(nameof(arrayIndex));
+
+        if (array.Length - arrayIndex < Count)
+            throw new ArgumentException("Destination array is not long enough.", nameof(array));
+
         foreach (var x in this)
             array[arrayIndex++] = x;
     }

@@ -27,7 +27,7 @@ public partial class RadixTree<TValue> : PrefixTree<TValue>
     public RadixTree(IEnumerable<KeyValuePair<string, TValue>> items)
     {
         foreach (var (key, value) in items)
-            Add(key, value);
+            this[key] = value;
     }
 
     /// <summary>
@@ -48,6 +48,8 @@ public partial class RadixTree<TValue> : PrefixTree<TValue>
 
     #region Public
 
+    public override int Count => CountNodes(_root);
+
     /// <inheritdoc/>
     public override bool TryGetValue(string key, out TValue value)
     {
@@ -62,7 +64,14 @@ public partial class RadixTree<TValue> : PrefixTree<TValue>
     {
         ArgumentException.ThrowIfNullOrEmpty(key, nameof(key));
 
-        GetOrAddNode(key, value, true);
+        GetOrAddNode(key, value, overwrite: false, throwOnExisting: true);
+    }
+
+    protected override void SetItem(string key, TValue value)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(key, nameof(key));
+
+        GetOrAddNode(key, value, overwrite: true);
     }
 
     /// <inheritdoc/>
@@ -119,6 +128,16 @@ public partial class RadixTree<TValue> : PrefixTree<TValue>
 
     #endregion
 
+    protected virtual int CountNodes(BaseNode node)
+    {
+        var count = node.HasValue ? 1 : 0;
+
+        foreach (var child in node.Children.Values)
+            count += CountNodes(child);
+
+        return count;
+    }
+
     protected virtual bool Find(ReadOnlySpan<char> key, BaseNode subtreeRoot, out BaseNode node)
     {
         node = subtreeRoot;
@@ -144,7 +163,7 @@ public partial class RadixTree<TValue> : PrefixTree<TValue>
         }
     }
 
-    protected virtual BaseNode GetOrAddNode(ReadOnlySpan<char> key, TValue value, bool overwrite = false)
+    protected virtual BaseNode GetOrAddNode(ReadOnlySpan<char> key, TValue value, bool overwrite = false, bool throwOnExisting = false)
     {
         var node = _root;
         var suffix = key;
@@ -164,7 +183,10 @@ public partial class RadixTree<TValue> : PrefixTree<TValue>
                     // keys are equal - this is the node we're looking for
                     if (i == suffix.Length)
                     {
-                        if (overwrite)
+                        if (throwOnExisting && nextNode.HasValue)
+                            throw new ArgumentException("An item with the same key has already been added.", nameof(key));
+
+                        if (overwrite || throwOnExisting)
                             nextNode.SetValue(value);
                         else
                             nextNode.GetOrAddValue(value);

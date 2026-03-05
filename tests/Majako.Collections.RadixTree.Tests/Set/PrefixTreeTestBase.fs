@@ -83,6 +83,17 @@ type PrefixTreeTestBase(ctor: option<string seq> -> IPrefixTree) =
         sut ==! [ "a"; "b"; "ab"; "aa"; "abc"; "abb"; "bba"; "bbb" ]
 
     [<Fact>]
+    let ``Prune none returns an empty mutable subtree`` () =
+        let sut = ctor <| Some [ "a" ]
+        let subtree = sut.Prune "z"
+
+        subtree ==! []
+        let added = subtree.Add "z"
+        test <@ added @>
+        test <@ subtree.Contains "z" @>
+        test <@ not (sut.Contains "z") @>
+
+    [<Fact>]
     let ``Can search`` () =
         let sut = ctor <| Some [ "a"; "b"; "bba"; "bbb"; "ab"; "aa"; "abc"; "abb" ]
 
@@ -96,3 +107,12 @@ type PrefixTreeTestBase(ctor: option<string seq> -> IPrefixTree) =
 
         sut.Clear()
         sut ==! []
+
+    [<Fact>]
+    let ``SymmetricExceptWith can add a non-overlapping key`` () =
+        let sut = ctor <| Some [ "Za"; "Zb" ]
+
+        test <@ not <| sut.Contains "Z" @>
+        let added = sut.Add "Z"
+        test <@ added @>
+        sut ==! [ "Za"; "Zb"; "Z" ]

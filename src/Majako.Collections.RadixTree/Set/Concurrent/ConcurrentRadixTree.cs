@@ -48,7 +48,13 @@ public partial class ConcurrentRadixTree : PrefixTree
     #region Public
 
     /// <inheritdoc/>
-    public override IPrefixTree Prune(string prefix) => new ConcurrentRadixTree(_backingDict.Prune(prefix) as ConcurrentRadixTree<byte>);
+    public override IPrefixTree Prune(string prefix)
+    {
+        ArgumentNullException.ThrowIfNull(prefix);
+
+        var pruned = BackingDict.Prune(prefix);
+        return new ConcurrentRadixTree(pruned.Keys);
+    }
 
     #endregion
 

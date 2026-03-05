@@ -31,7 +31,7 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
     public ConcurrentRadixTree(IEnumerable<KeyValuePair<string, TValue>> items)
     {
         foreach (var (key, value) in items)
-            Add(key, value);
+            this[key] = value;
     }
 
     /// <summary>
@@ -52,6 +52,8 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
 
     #region Public
 
+    public override int Count => CountNodes(_root);
+
     /// <inheritdoc/>
     public override bool TryGetValue(string key, out TValue value)
     {
@@ -67,7 +69,14 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
     {
         ArgumentException.ThrowIfNullOrEmpty(key, nameof(key));
 
-        GetOrAddNode(key, value, true);
+        GetOrAddNode(key, value, overwrite: false, throwOnExisting: true);
+    }
+
+    protected override void SetItem(string key, TValue value)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(key, nameof(key));
+
+        GetOrAddNode(key, value, overwrite: true);
     }
 
     /// <inheritdoc/>
@@ -129,6 +138,20 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
 
     #endregion
 
+    protected virtual int CountNodes(BaseNode node)
+    {
+        var count = node.HasValue ? 1 : 0;
+        IList<BaseNode> children;
+
+        using (new LockWrapper(GetLock(node), LockType.Read))
+            children = [.. node.Children.Values];
+
+        foreach (var child in children)
+            count += CountNodes(child);
+
+        return count;
+    }
+
     /// <summary>
     /// Gets a lock on the node's children
     /// </summary>
@@ -165,75 +188,77 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
         }
     }
 
-    protected virtual BaseNode GetOrAddNode(ReadOnlySpan<char> key, TValue value, bool overwrite = false)
+    protected virtual BaseNode GetOrAddNode(ReadOnlySpan<char> key, TValue value, bool overwrite = false, bool throwOnExisting = false)
     {
-        var node = _root;
-        var suffix = key;
-        ReaderWriterLockSlim nodeLock;
-        char c;
-
-        using (new LockWrapper(_structureLock, LockType.Read))
+        while (true)
         {
-            while (true)
-            {
-                c = suffix[0];
-                nodeLock = GetLock(node);
-                using (new LockWrapper(nodeLock, LockType.UpgradeableRead))
-                {
-                    if (node.Children.TryGetValue(c, out BaseNode nextNode))
-                    {
-                        var label = nextNode.Label.AsSpan();
-                        var i = GetCommonPrefixLength(label, suffix);
-                        // suffix starts with label
-                        if (i == label.Length)
-                        {
-                            // keys are equal - this is the node we're looking for
-                            if (i == suffix.Length)
-                            {
-                                if (overwrite)
-                                    nextNode.SetValue(value);
-                                else
-                                    nextNode.GetOrAddValue(value);
+            var node = _root;
+            var suffix = key;
+            ReaderWriterLockSlim nodeLock;
+            char c;
 
-                                return nextNode;
+            using (new LockWrapper(_structureLock, LockType.Read))
+            {
+                while (true)
+                {
+                    c = suffix[0];
+                    nodeLock = GetLock(node);
+                    using (new LockWrapper(nodeLock, LockType.UpgradeableRead))
+                    {
+                        if (node.Children.TryGetValue(c, out BaseNode nextNode))
+                        {
+                            var label = nextNode.Label.AsSpan();
+                            var i = GetCommonPrefixLength(label, suffix);
+                            // suffix starts with label
+                            if (i == label.Length)
+                            {
+                                // keys are equal - this is the node we're looking for
+                                if (i == suffix.Length)
+                                {
+                                    if (throwOnExisting && nextNode.HasValue)
+                                        throw new ArgumentException("An item with the same key has already been added.", nameof(key));
+
+                                    if (overwrite || throwOnExisting)
+                                        nextNode.SetValue(value);
+                                    else
+                                        nextNode.GetOrAddValue(value);
+
+                                    return nextNode;
+                                }
+
+                                // advance the suffix and continue the search from nextNode
+                                suffix = suffix[label.Length..];
+                                node = nextNode;
+
+                                continue;
                             }
 
-                            // advance the suffix and continue the search from nextNode
-                            suffix = suffix[label.Length..];
-                            node = nextNode;
-
-                            continue;
+                            // we need to add a node, but don't want to hold an upgradeable read lock on _structureLock
+                            // since only one can be held at a time, so we break, release the lock and reacquire a write lock
+                            break;
                         }
 
-                        // we need to add a node, but don't want to hold an upgradeable read lock on _structureLock
-                        // since only one can be held at a time, so we break, release the lock and reacquire a write lock
-                        break;
-                    }
+                        // if there is no child starting with c, we can just add and return one
+                        using (new LockWrapper(nodeLock, LockType.Write))
+                        {
+                            var suffixNode = new Node(suffix);
+                            suffixNode.SetValue(value);
 
-                    // if there is no child starting with c, we can just add and return one
-                    using (new LockWrapper(nodeLock, LockType.Write))
-                    {
-                        var suffixNode = new Node(suffix);
-                        suffixNode.SetValue(value);
-
-                        return node.Children[c] = suffixNode;
+                            return node.Children[c] = suffixNode;
+                        }
                     }
                 }
             }
+
+            // if we need to restructure the tree, we do it after releasing and reacquiring the lock.
+            // however, another thread may have restructured around the node we're on in the meantime,
+            // and in that case we need to retry the insertion
+            if (AddAndRestructure(node, suffix, overwrite, throwOnExisting, value, out var addedNode))
+                return addedNode;
         }
-
-        // if we need to restructure the tree, we do it after releasing and reacquiring the lock.
-        // however, another thread may have restructured around the node we're on in the meantime,
-        // and in that case we need to retry the insertion
-        if (AddAndRestructure(node, suffix, overwrite, value, out var addedNode))
-            return addedNode;
-
-        // we failed to add a node, so we have to retry;
-        // the recursive call is placed at the end to enable tail-recursion optimization
-        return GetOrAddNode(key, value, overwrite);
     }
 
-    protected bool AddAndRestructure(BaseNode node, ReadOnlySpan<char> suffix, bool overwrite, TValue value, out BaseNode addedNode)
+    protected bool AddAndRestructure(BaseNode node, ReadOnlySpan<char> suffix, bool overwrite, bool throwOnExisting, TValue value, out BaseNode addedNode)
     {
         addedNode = default;
 
@@ -254,7 +279,10 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
             // if the keys are equal, the key has already been inserted
             if (i == suffix.Length)
             {
-                if (overwrite)
+                if (throwOnExisting && nextNode.HasValue)
+                    throw new ArgumentException("An item with the same key has already been added.", nameof(suffix));
+
+                if (overwrite || throwOnExisting)
                     nextNode.SetValue(value);
 
                 addedNode = nextNode;
@@ -373,12 +401,13 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
             // since we removed a node, we may be able to merge a lone sibling with the parent
             if (parent.Children.Count == 1 && grandparent != null && !parent.HasValue)
             {
+                var parentKey = parent.Label[0];
                 using var _grandparentLockWrapper = new LockWrapper(grandparentLock, grandparentLock == parentLock ? LockType.None : LockType.Write);
-                if (!grandparent.Children.TryGetValue(c, out n) || n != parent || parent.HasValue)
+                if (!grandparent.Children.TryGetValue(parentKey, out n) || n != parent || parent.HasValue)
                     return false;
 
                 var child = parent.Children.First().Value;
-                grandparent.Children[c] = new Node(parent.Label + child.Label, child);
+                grandparent.Children[parentKey] = new Node(parent.Label + child.Label, child);
                 parent.Delete();
             }
         }

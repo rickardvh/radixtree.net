@@ -52,7 +52,13 @@ public partial class RadixTree : PrefixTree
     #region Public
 
     /// <inheritdoc/>
-    public override IPrefixTree Prune(string prefix) => new RadixTree(_backingDict.Prune(prefix) as RadixTree<byte>);
+    public override IPrefixTree Prune(string prefix)
+    {
+        ArgumentNullException.ThrowIfNull(prefix);
+
+        var pruned = BackingDict.Prune(prefix);
+        return new RadixTree(pruned.Keys);
+    }
 
     #endregion
 

@@ -11,7 +11,7 @@ public abstract partial class PrefixTree<TValue> : IPrefixTree<TValue>
     public virtual TValue this[string key]
     {
         get => TryGetValue(key, out var value) ? value : throw new KeyNotFoundException();
-        set => Add(key, value);
+        set => SetItem(key, value);
     }
 
     public IEnumerable<string> Keys => this.Select(t => t.Key);
@@ -24,6 +24,7 @@ public abstract partial class PrefixTree<TValue> : IPrefixTree<TValue>
     ICollection<TValue> IDictionary<string, TValue>.Values => Values.ToList();
 
     public abstract void Add(string key, TValue value);
+    protected abstract void SetItem(string key, TValue value);
     public abstract IPrefixTree<TValue> Prune(string prefix);
     public abstract bool Remove(string key);
     public abstract bool Remove(KeyValuePair<string, TValue> item);
@@ -35,6 +36,14 @@ public abstract partial class PrefixTree<TValue> : IPrefixTree<TValue>
 
     public void CopyTo(KeyValuePair<string, TValue>[] array, int arrayIndex)
     {
+        ArgumentNullException.ThrowIfNull(array);
+
+        if (arrayIndex < 0 || arrayIndex > array.Length)
+            throw new ArgumentOutOfRangeException(nameof(arrayIndex));
+
+        if (array.Length - arrayIndex < Count)
+            throw new ArgumentException("Destination array is not long enough.", nameof(array));
+
         foreach (var kv in this)
             array[arrayIndex++] = kv;
     }

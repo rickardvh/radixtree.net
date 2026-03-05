@@ -4,6 +4,7 @@ open FsCheck
 open FsCheck.Xunit
 open Majako.Collections.RadixTree
 open System.Collections.Generic
+open System
 open Majako.Collections.RadixTree.Tests
 
 type TestItems = list<NonEmptyString>
@@ -103,6 +104,27 @@ type PrefixTreePropertyTestBase(ctor: (string seq -> IPrefixTree)) =
         sut == expected
 
     [<Property>]
+    let ``Count should equal the number of distinct items`` (items: TestItems) =
+        let sut = makeTrie items
+        let expectedCount = items |> Seq.map (fun x -> x.Get) |> Set.ofSeq |> Set.count
+        sut.Count = expectedCount
+
+    [<Property>]
+    let ``Add return value and final count should match HashSet`` (items: TestItems) =
+        let sut = ctor Seq.empty
+        let expected = HashSet<string>()
+
+        let addResultsMatch =
+            items
+            |> List.forall (fun item ->
+                let key = item.Get
+                let expectedAdded = expected.Add(key)
+                let actualAdded = sut.Add(key)
+                expectedAdded = actualAdded)
+
+        addResultsMatch && sut.Count = expected.Count
+
+    [<Property>]
     let ``A pruned subtree should contain only items with the given prefix`` (items: TestItems, prefix: string) =
         let sut = makeTrie items
         let subTree = sut.Prune prefix
@@ -119,3 +141,76 @@ type PrefixTreePropertyTestBase(ctor: (string seq -> IPrefixTree)) =
         let sut = makeTrie items
         sut.Clear()
         Seq.isEmpty sut
+
+    [<Property>]
+    let ``ExceptWith self should clear the set without throwing`` (items: TestItems) =
+        let sut = makeTrie items
+
+        try
+            sut.ExceptWith(sut)
+            Seq.isEmpty sut
+        with _ ->
+            false
+
+    [<Property>]
+    let ``CopyTo should throw ArgumentException when destination is too small`` (items: TestItems, arrayIndex: NonNegativeInt) =
+        let sut = makeTrie items
+        let count = sut.Count
+
+        if count = 0 then
+            true
+        else
+            let index = arrayIndex.Get % 3
+            let arr = Array.zeroCreate<string> (index + count - 1)
+            try
+                sut.CopyTo(arr, index)
+                false
+            with
+            | :? ArgumentException -> true
+            | _ -> false
+
+    [<Property>]
+    let ``SymmetricExceptWith should match HashSet behavior`` (items: TestItems, other: TestItems) =
+        let sut = makeTrie items
+        let expected = HashSet(items |> Seq.map (fun x -> x.Get))
+        let otherValues = other |> Seq.map (fun x -> x.Get) |> Seq.toList
+
+        expected.SymmetricExceptWith(otherValues)
+        sut.SymmetricExceptWith(otherValues)
+
+        sut == expected
+
+    [<Property>]
+    let ``Prune should partition items by prefix`` (items: TestItems, prefix: string) =
+        let sut = makeTrie items
+        let expected = items |> Seq.map (fun x -> x.Get) |> Set.ofSeq
+        let subtree = sut.Prune(prefix)
+
+        let expectedPruned = expected |> Seq.filter (fun k -> startsWith k prefix) |> Set.ofSeq
+        let expectedRemaining = expected |> Seq.filter (fun k -> not (startsWith k prefix)) |> Set.ofSeq
+        let actualPruned = subtree |> Set.ofSeq
+        let actualRemaining = sut |> Set.ofSeq
+
+        actualPruned = expectedPruned && actualRemaining = expectedRemaining
+
+    [<Property>]
+    let ``Set operations should throw ArgumentNullException when other is null`` (items: TestItems) =
+        let sut = makeTrie items
+        let isArgNull f =
+            try
+                f ()
+                false
+            with
+            | :? ArgumentNullException -> true
+            | _ -> false
+
+        isArgNull (fun () -> sut.IntersectWith null)
+        && isArgNull (fun () -> sut.IsProperSubsetOf null |> ignore)
+        && isArgNull (fun () -> sut.IsProperSupersetOf null |> ignore)
+        && isArgNull (fun () -> sut.IsSubsetOf null |> ignore)
+        && isArgNull (fun () -> sut.IsSupersetOf null |> ignore)
+        && isArgNull (fun () -> sut.ExceptWith null)
+        && isArgNull (fun () -> sut.Overlaps null |> ignore)
+        && isArgNull (fun () -> sut.SetEquals null |> ignore)
+        && isArgNull (fun () -> sut.SymmetricExceptWith null)
+        && isArgNull (fun () -> sut.UnionWith null)
