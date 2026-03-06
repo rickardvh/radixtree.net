@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace Majako.Collections.RadixTree.Concurrent;
 
 public partial class ConcurrentRadixTree<TValue>
@@ -5,6 +7,7 @@ public partial class ConcurrentRadixTree<TValue>
     /// <summary>
     /// An implementation of a trie node
     /// </summary>
+    [SuppressMessage("Design", "CA1051:Do not declare visible instance fields", Justification = "Volatile value field is intentionally mutable for lock-free value updates.")]
     protected class Node : BaseNode
     {
         protected volatile ValueWrapper? _value;

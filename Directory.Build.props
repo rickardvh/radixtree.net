@@ -4,6 +4,6 @@
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <Deterministic>true</Deterministic>
     <ContinuousIntegrationBuild Condition="'$(CI)' != ''">true</ContinuousIntegrationBuild>
-    <WarningsNotAsErrors>$(WarningsNotAsErrors);IDE*;CA*;BC*;CS8600;CS8601;CS8602;CS8604;CS8618;CS8625</WarningsNotAsErrors>
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);IDE*;CA*;BC*</WarningsNotAsErrors>
   </PropertyGroup>
 </Project>

@@ -18,6 +18,8 @@ type ConcurrentRadixTreeStressTests() =
               let salt = rng.Next(0, 4096)
               $"{prefix}{shard}-{salt:D4}-{i:D4}" ]
 
+    let stressSeeds = [ 13; 29; 43; 71; 97 ]
+
     [<Fact>]
     [<Trait("Category", "Stress")>]
     member _.``Deterministic mixed parallel workloads should match reference hash set``() =
@@ -66,7 +68,7 @@ type ConcurrentRadixTreeStressTests() =
                     let expectedSet = expected |> Set.ofSeq
                     test <@ actualSet = expectedSet @>
 
-                [ 17; 43; 97 ] |> List.iter runScenario
+                stressSeeds |> List.iter runScenario
                 true)
 
         test <@ completed @>
@@ -125,7 +127,67 @@ type ConcurrentRadixTreeStressTests() =
                     test <@ prunePrefixRemoved @>
                     test <@ prunedOnlyContainsPrefix @>
 
-                [ 13; 29; 71 ] |> List.iter runScenario
+                stressSeeds |> List.iter runScenario
+                true)
+
+        test <@ completed @>
+
+    [<Fact>]
+    [<Trait("Category", "Stress")>]
+    member _.``Deterministic seeded high-churn races should preserve keep-prefix partition after settle``() =
+        let completed =
+            completesWithin (TimeSpan.FromSeconds 60.0) (fun () ->
+                let runScenario seed =
+                    let churnPrefix = $"c-{seed}-"
+                    let keepPrefix = $"k-{seed}-"
+                    let churnItems = buildItems (seed + 101) churnPrefix 160
+                    let keepItems = buildItems (seed + 211) keepPrefix 160
+                    let sut = ConcurrentRadixTree()
+
+                    churnItems |> List.iter (fun item -> sut.Add(item) |> ignore)
+                    keepItems |> List.iter (fun item -> sut.Add(item) |> ignore)
+
+                    let options = ParallelOptions(MaxDegreeOfParallelism = 8)
+
+                    Parallel.For(0, 8, options, fun worker ->
+                        let rng = Random(seed * 1000 + worker)
+
+                        if worker = 0 then
+                            for round in 0 .. 299 do
+                                let subtree = sut.Prune(churnPrefix)
+                                if round % 4 = 0 then
+                                    for i in 0 .. 7 do
+                                        let item = churnItems[(round + i) % churnItems.Length]
+                                        sut.Add(item) |> ignore
+
+                                if round % 9 = 0 then
+                                    for item in subtree do
+                                        if item.GetHashCode() % 5 = 0 then
+                                            sut.Add(item) |> ignore
+                        elif worker % 2 = 0 then
+                            for round in 0 .. 399 do
+                                let item = churnItems[rng.Next(churnItems.Length)]
+                                sut.Add(item) |> ignore
+
+                                if round % 3 = 0 then
+                                    sut.Remove(item) |> ignore
+                        else
+                            for _ in 0 .. 399 do
+                                let item = keepItems[rng.Next(keepItems.Length)]
+                                sut.Add(item) |> ignore)
+                    |> ignore
+
+                    // Deterministic settle phase.
+                    keepItems |> List.iter (fun item -> sut.Add(item) |> ignore)
+                    sut.Prune(churnPrefix) |> ignore
+
+                    let keepPartitionIntact = keepItems |> List.forall sut.Contains
+                    let churnPrefixRemoved = sut |> Seq.forall (fun item -> not (item.StartsWith(churnPrefix)))
+
+                    test <@ keepPartitionIntact @>
+                    test <@ churnPrefixRemoved @>
+
+                stressSeeds |> List.iter runScenario
                 true)
 
         test <@ completed @>

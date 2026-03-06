@@ -1,8 +1,11 @@
-﻿namespace Majako.Collections.RadixTree;
+using System.Diagnostics.CodeAnalysis;
+
+namespace Majako.Collections.RadixTree;
 
 /// <summary>
 /// Represents a thread-safe collection
 /// </summary>
+[SuppressMessage("Naming", "CA1710:Identifiers should have correct suffix", Justification = "Public API keeps established PrefixTree naming.")]
 public partial interface IPrefixTree<TValue> : IDictionary<string, TValue>
 {
     /// <summary>

@@ -1,10 +1,13 @@
-﻿using System.Runtime.CompilerServices;
+using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
 
 namespace Majako.Collections.RadixTree.Concurrent;
 
 /// <summary>
 /// A thread-safe implementation of a radix tree
 /// </summary>
+[SuppressMessage("Design", "CA1001:Types that own disposable fields should be disposable", Justification = "Lock lifetime is process-wide and intentionally matches trie lifetime.")]
+[SuppressMessage("Design", "CA1051:Do not declare visible instance fields", Justification = "Concurrency fields are intentionally exposed to derived trie internals for performance.")]
 public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
 {
     #region Fields
@@ -117,8 +120,11 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
                 return false;
             }
 
-            if (node.TryGetValue(out value))
+            if (node.TryGetValue(out var foundValue))
+            {
+                value = foundValue;
                 return true;
+            }
 
             if (!node.IsDeleted)
                 return false;
@@ -284,8 +290,9 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
         {
             var c = suffix[0];
 
-            if (node.Children.TryGetValue(c, out BaseNode nextNode))
+            if (node.Children.TryGetValue(c, out var foundNode) && foundNode is not null)
             {
+                var nextNode = foundNode;
                 var label = nextNode.Label.AsSpan();
                 var i = GetCommonPrefixLength(label, suffix);
                 if (i == label.Length)
@@ -507,8 +514,10 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
                         break;
                     }
 
-                    if (!parent.Children.TryGetValue(edge, out node))
+                    if (!parent.Children.TryGetValue(edge, out var nextNode) || nextNode is null)
                         return false;
+
+                    node = nextNode;
                 }
 
                 if (node.IsDeleted)
@@ -571,9 +580,9 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
 
                 var c = suffix[0];
                 var parentLock = GetLock(node);
-                BaseNode nextNode = null;
-                BaseNode splitParent = null;
-                BaseNode splitChild = null;
+                BaseNode? nextNode = null;
+                BaseNode? splitParent = null;
+                BaseNode? splitChild = null;
                 char splitEdge = default;
                 ReadOnlySpan<char> splitSuffix = default;
                 var needsInsert = false;
@@ -642,7 +651,7 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
                 {
                     using (new LockWrapper(parentLock, LockType.Write))
                     {
-                        if (node.IsDeleted || nextNode.IsDeleted || !IsCurrentChild(node, c, nextNode))
+                        if (nextNode is null || node.IsDeleted || nextNode.IsDeleted || !IsCurrentChild(node, c, nextNode))
                             break;
 
                         if (throwOnExisting && nextNode.HasValue)
@@ -660,7 +669,8 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
                     return nextNode;
                 }
 
-                if (splitParent != null
+                if (splitParent is not null
+                    && splitChild is not null
                     && TrySplitAndInsert(splitParent, splitChild, splitEdge, splitSuffix, value, overwrite, throwOnExisting, out var addedNode))
                     return addedNode;
 
@@ -684,7 +694,7 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
         bool throwOnExisting,
         out BaseNode addedNode)
     {
-        addedNode = default;
+        addedNode = default!;
 
         if (parent == null || child == null || parent.IsDeleted || child.IsDeleted)
             return false;
@@ -694,11 +704,11 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
         const string suffixParamName = "suffix";
         var parentLock = GetLock(parent);
         var childLock = GetLock(child);
-        BaseNode resultNode = null;
+        BaseNode? resultNode = null;
 
-        bool TrySplitCore(out BaseNode resultNode)
+        bool TrySplitCore(out BaseNode? resultNode)
         {
-            resultNode = default;
+            resultNode = null;
 
             if (parent.IsDeleted || child.IsDeleted || !IsCurrentChild(parent, parentEdge, child))
                 return false;
@@ -760,8 +770,11 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
             () => TrySplitCore(out resultNode),
             MaxSplitDualLockAttempts);
 
+        if (!success || resultNode is null)
+            return false;
+
         addedNode = resultNode;
-        return success;
+        return true;
     }
 
     /// <summary>
@@ -1010,6 +1023,7 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
         }
     }
 
+    [SuppressMessage("Performance", "CA1822:Mark members as static", Justification = "Method references instance state in DEBUG builds.")]
     internal void AssertDebugInvariants()
     {
 #if DEBUG
@@ -1018,6 +1032,7 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
 #endif
     }
 
+    [SuppressMessage("Naming", "CA1716:Identifiers should not match keywords", Justification = "Parameter naming is retained for backward compatibility in extensibility surface.")]
     protected virtual bool TryValidateInvariants(
         BaseNode node,
         bool isRoot,

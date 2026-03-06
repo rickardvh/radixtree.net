@@ -18,6 +18,8 @@ type ConcurrentRadixTreeStressTests() =
               let salt = rng.Next(0, 4096)
               $"{prefix}{shard}-{salt:D4}-{i:D4}" ]
 
+    let stressSeeds = [ 13; 29; 43; 71; 97 ]
+
     [<Fact>]
     [<Trait("Category", "Stress")>]
     member _.``Deterministic mixed parallel workloads should match reference dictionary``() =
@@ -69,7 +71,7 @@ type ConcurrentRadixTreeStressTests() =
                     let expectedMap = expected |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq
                     test <@ actualMap = expectedMap @>
 
-                [ 17; 43; 97 ] |> List.iter runScenario
+                stressSeeds |> List.iter runScenario
                 true)
 
         test <@ completed @>
@@ -133,7 +135,74 @@ type ConcurrentRadixTreeStressTests() =
                     test <@ prunePrefixRemoved @>
                     test <@ prunedOnlyContainsPrefix @>
 
-                [ 13; 29; 71 ] |> List.iter runScenario
+                stressSeeds |> List.iter runScenario
+                true)
+
+        test <@ completed @>
+
+    [<Fact>]
+    [<Trait("Category", "Stress")>]
+    member _.``Deterministic seeded high-churn races should preserve keep-prefix partition after settle``() =
+        let completed =
+            completesWithin (TimeSpan.FromSeconds 60.0) (fun () ->
+                let runScenario seed =
+                    let churnPrefix = $"c-{seed}-"
+                    let keepPrefix = $"k-{seed}-"
+                    let churnKeys = buildKeys (seed + 101) churnPrefix 160
+                    let keepKeys = buildKeys (seed + 211) keepPrefix 160
+                    let sut = ConcurrentRadixTree<int>()
+
+                    churnKeys |> List.iteri (fun i key -> sut.[key] <- -(i + 1))
+                    keepKeys |> List.iteri (fun i key -> sut.[key] <- i)
+
+                    let options = ParallelOptions(MaxDegreeOfParallelism = 8)
+
+                    Parallel.For(0, 8, options, fun worker ->
+                        let rng = Random(seed * 1000 + worker)
+
+                        if worker = 0 then
+                            for round in 0 .. 299 do
+                                let subtree = sut.Prune(churnPrefix)
+                                if round % 4 = 0 then
+                                    for i in 0 .. 7 do
+                                        let key = churnKeys[(round + i) % churnKeys.Length]
+                                        sut.[key] <- round + i
+
+                                if round % 9 = 0 then
+                                    for kv in subtree do
+                                        if kv.Key.GetHashCode() % 5 = 0 then
+                                            sut.[kv.Key] <- kv.Value
+                        elif worker % 2 = 0 then
+                            for round in 0 .. 399 do
+                                let key = churnKeys[rng.Next(churnKeys.Length)]
+                                sut.[key] <- worker * 100_000 + round
+
+                                if round % 3 = 0 then
+                                    sut.Remove(key) |> ignore
+                        else
+                            for round in 0 .. 399 do
+                                let key = keepKeys[rng.Next(keepKeys.Length)]
+                                sut.[key] <- worker * 100_000 + round)
+                    |> ignore
+
+                    // Deterministic settle phase.
+                    keepKeys |> List.iteri (fun i key -> sut.[key] <- i)
+                    sut.Prune(churnPrefix) |> ignore
+
+                    let expectedValues = keepKeys |> List.mapi (fun i key -> key, i) |> Map.ofList
+
+                    let keepPartitionIntact =
+                        keepKeys
+                        |> List.forall (fun key ->
+                            let found, value = sut.TryGetValue key
+                            found && value = expectedValues[key])
+
+                    let churnPrefixRemoved = sut.Keys |> Seq.forall (fun key -> not (key.StartsWith(churnPrefix)))
+
+                    test <@ keepPartitionIntact @>
+                    test <@ churnPrefixRemoved @>
+
+                stressSeeds |> List.iter runScenario
                 true)
 
         test <@ completed @>

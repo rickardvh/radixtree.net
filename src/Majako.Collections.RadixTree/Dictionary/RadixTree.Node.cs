@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace Majako.Collections.RadixTree;
 
 public partial class RadixTree<TValue>
@@ -5,6 +7,7 @@ public partial class RadixTree<TValue>
     /// <summary>
     /// An implementation of a trie node
     /// </summary>
+    [SuppressMessage("Design", "CA1051:Do not declare visible instance fields", Justification = "Node value field is intentionally mutable for low-overhead trie operations.")]
     protected class Node : BaseNode
     {
         protected ValueWrapper? _value;

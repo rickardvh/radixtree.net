@@ -229,3 +229,91 @@ type ConcurrentRadixTreePropertyTests() =
             let othersReachable = otherItems |> List.forall sut.Contains
 
             prunedAreValid && remainingAreValid && othersReachable)
+
+    [<Property(MaxTest = 24)>]
+    member _.``Parallel round-based mixed operations should match reference hash set model``
+        (prefix: NonEmptyString, suffixes: list<NonEmptyString>)
+        =
+        runParallelProperty (fun () ->
+            let seeds =
+                suffixes
+                |> List.map (fun s -> s.Get)
+                |> List.distinct
+                |> List.truncate 20
+
+            if List.isEmpty seeds then
+                true
+            else
+                let prunePrefix = prefix.Get + "-pm-"
+                let keepPrefix = prefix.Get + "-km-"
+                let pruneItems = seeds |> List.map (fun s -> prunePrefix + s)
+                let keepItems = seeds |> List.map (fun s -> keepPrefix + s)
+                let sut = ConcurrentRadixTree()
+                let expected = HashSet<string>()
+
+                pruneItems |> List.iter (fun item -> sut.Add(item) |> ignore; expected.Add(item) |> ignore)
+                keepItems |> List.iter (fun item -> sut.Add(item) |> ignore; expected.Add(item) |> ignore)
+
+                for round in 0 .. 15 do
+                    let keepOps = keepItems |> List.mapi (fun i item -> i, item)
+
+                    keepOps
+                    |> List.iter (fun (i, item) ->
+                        if (round + i) % 4 = 0 then
+                            expected.Remove(item) |> ignore
+                        else
+                            expected.Add(item) |> ignore)
+
+                    keepOps
+                    |> Array.ofList
+                    |> Array.Parallel.iter (fun (i, item) ->
+                        if (round + i) % 4 = 0 then
+                            sut.Remove(item) |> ignore
+                        else
+                            sut.Add(item) |> ignore)
+
+                    if round % 2 = 0 then
+                        let pruneOps = pruneItems |> List.mapi (fun i item -> i, item)
+
+                        pruneOps
+                        |> List.iter (fun (i, item) ->
+                            if (round + i) % 3 = 0 then
+                                expected.Remove(item) |> ignore
+                            else
+                                expected.Add(item) |> ignore)
+
+                        pruneOps
+                        |> Array.ofList
+                        |> Array.Parallel.iter (fun (i, item) ->
+                            if (round + i) % 3 = 0 then
+                                sut.Remove(item) |> ignore
+                            else
+                                sut.Add(item) |> ignore)
+                    else
+                        keepItems |> List.iter (fun item -> expected.Add(item) |> ignore)
+
+                        expected
+                        |> Seq.filter (fun item -> item.StartsWith(prunePrefix))
+                        |> Seq.toArray
+                        |> Array.iter (fun item -> expected.Remove(item) |> ignore)
+
+                        [| 0; 1 |]
+                        |> Array.Parallel.iter (fun worker ->
+                            if worker = 0 then
+                                sut.Prune(prunePrefix) |> ignore
+                            else
+                                for item in keepItems do
+                                    sut.Add(item) |> ignore)
+
+                // Deterministic settle phase.
+                keepItems |> List.iter (fun item -> expected.Add(item) |> ignore; sut.Add(item) |> ignore)
+                sut.Prune(prunePrefix) |> ignore
+
+                expected
+                |> Seq.filter (fun item -> item.StartsWith(prunePrefix))
+                |> Seq.toArray
+                |> Array.iter (fun item -> expected.Remove(item) |> ignore)
+
+                let expectedSet = expected |> Set.ofSeq
+                let actualSet = sut |> Set.ofSeq
+                actualSet = expectedSet)

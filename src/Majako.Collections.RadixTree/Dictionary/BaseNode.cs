@@ -7,6 +7,7 @@ public abstract partial class PrefixTree<TValue>
     protected abstract class BaseNode(string label = "")
     {
         // used to avoid keeping a separate boolean flag that would use another byte per node
+        [SuppressMessage("Naming", "CA1707:Identifiers should not contain underscores", Justification = "Deleted sentinel field uses underscore naming to distinguish internal marker semantics.")]
         protected static readonly ValueWrapper _deleted = new(default!);
         protected abstract ValueWrapper? Value { get; set; }
 

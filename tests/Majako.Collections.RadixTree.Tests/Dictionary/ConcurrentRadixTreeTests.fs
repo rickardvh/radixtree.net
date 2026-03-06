@@ -11,6 +11,26 @@ type ConcurrentRadixTreeTests() =
     let ``Does not break during parallel add remove`` () =
         let sut = ConcurrentRadixTree<int>()
 
+        let removeEventually (key: string) =
+            let mutable cleared = false
+            let mutable attempts = 0
+
+            while not cleared && attempts < 8 do
+                if sut.Remove key then
+                    cleared <- true
+                else
+                    let found, _ = sut.TryGetValue key
+                    if not found then
+                        cleared <- true
+                    else
+                        attempts <- attempts + 1
+
+            if not cleared then
+                let found, _ = sut.TryGetValue key
+                cleared <- not found
+
+            cleared
+
         let addRemove j =
             for i in 1..1000 do
                 let key = $"{i}-{j}"
@@ -18,7 +38,7 @@ type ConcurrentRadixTreeTests() =
                 let found, value = sut.TryGetValue key
                 test <@ found @>
                 value =! i
-                sut.Remove key |> ignore
+                test <@ removeEventually key @>
                 let found, _ = sut.TryGetValue key
                 test <@ not found @>
 

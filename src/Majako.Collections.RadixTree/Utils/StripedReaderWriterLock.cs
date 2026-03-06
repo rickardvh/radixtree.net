@@ -1,8 +1,11 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace Majako.Collections.RadixTree;
 
 /// <summary>
 /// Represents a striped reader-writer lock that allows multiple readers or a single writer to access a resource concurrently.
 /// </summary>
+[SuppressMessage("Design", "CA1051:Do not declare visible instance fields", Justification = "Striped lock storage is intentionally visible to derived lock strategies.")]
 public class StripedReaderWriterLock
 {
     #region Fields

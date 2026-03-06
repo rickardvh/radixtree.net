@@ -263,3 +263,101 @@ type ConcurrentRadixTreePropertyTests() =
             let othersReachable = otherKeys |> List.forall sut.ContainsKey
 
             prunedAreValid && remainingAreValid && othersReachable)
+
+    [<Property(MaxTest = 24)>]
+    member _.``Parallel round-based mixed operations should match reference dictionary model``
+        (prefix: NonEmptyString, suffixes: list<NonEmptyString>)
+        =
+        runParallelProperty (fun () ->
+            let seeds =
+                suffixes
+                |> List.map (fun s -> s.Get)
+                |> List.distinct
+                |> List.truncate 20
+
+            if List.isEmpty seeds then
+                true
+            else
+                let prunePrefix = prefix.Get + "-pm-"
+                let keepPrefix = prefix.Get + "-km-"
+                let pruneKeys = seeds |> List.map (fun s -> prunePrefix + s)
+                let keepKeys = seeds |> List.map (fun s -> keepPrefix + s)
+                let sut = ConcurrentRadixTree<int>()
+                let expected = Dictionary<string, int>()
+
+                pruneKeys |> List.iteri (fun i key -> sut.[key] <- -(i + 1); expected[key] <- -(i + 1))
+                keepKeys |> List.iteri (fun i key -> sut.[key] <- i; expected[key] <- i)
+
+                for round in 0 .. 15 do
+                    let keepOps =
+                        keepKeys
+                        |> List.mapi (fun i key -> i, key, round * 1000 + i)
+
+                    keepOps
+                    |> List.iter (fun (i, key, value) ->
+                        if (round + i) % 4 = 0 then
+                            expected.Remove(key) |> ignore
+                        else
+                            expected[key] <- value)
+
+                    keepOps
+                    |> Array.ofList
+                    |> Array.Parallel.iter (fun (i, key, value) ->
+                        if (round + i) % 4 = 0 then
+                            sut.Remove(key) |> ignore
+                        else
+                            sut.[key] <- value)
+
+                    if round % 2 = 0 then
+                        let pruneOps =
+                            pruneKeys
+                            |> List.mapi (fun i key -> i, key, round * 2000 + i)
+
+                        pruneOps
+                        |> List.iter (fun (i, key, value) ->
+                            if (round + i) % 3 = 0 then
+                                expected.Remove(key) |> ignore
+                            else
+                                expected[key] <- value)
+
+                        pruneOps
+                        |> Array.ofList
+                        |> Array.Parallel.iter (fun (i, key, value) ->
+                            if (round + i) % 3 = 0 then
+                                sut.Remove(key) |> ignore
+                            else
+                                sut.[key] <- value)
+                    else
+                        let keepBurst =
+                            keepKeys
+                            |> List.mapi (fun i key -> key, round * 3000 + i)
+
+                        keepBurst |> List.iter (fun (key, value) -> expected[key] <- value)
+
+                        let prunable =
+                            expected.Keys
+                            |> Seq.filter (fun key -> key.StartsWith(prunePrefix))
+                            |> Seq.toArray
+
+                        prunable |> Array.iter (fun key -> expected.Remove(key) |> ignore)
+
+                        [| 0; 1 |]
+                        |> Array.Parallel.iter (fun worker ->
+                            if worker = 0 then
+                                sut.Prune(prunePrefix) |> ignore
+                            else
+                                for (key, value) in keepBurst do
+                                    sut.[key] <- value)
+
+                // Deterministic settle phase.
+                keepKeys |> List.iteri (fun i key -> expected[key] <- i; sut.[key] <- i)
+                sut.Prune(prunePrefix) |> ignore
+
+                expected.Keys
+                |> Seq.filter (fun key -> key.StartsWith(prunePrefix))
+                |> Seq.toArray
+                |> Array.iter (fun key -> expected.Remove(key) |> ignore)
+
+                let expectedMap = expected |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq
+                let actualMap = sut |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq
+                actualMap = expectedMap)

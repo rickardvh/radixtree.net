@@ -1,8 +1,11 @@
-﻿namespace Majako.Collections.RadixTree;
+using System.Diagnostics.CodeAnalysis;
+
+namespace Majako.Collections.RadixTree;
 
 /// <summary>
 /// A thread-safe implementation of a radix tree
 /// </summary>
+[SuppressMessage("Design", "CA1051:Do not declare visible instance fields", Justification = "Node and root fields are intentionally exposed to derived trie internals for performance.")]
 public partial class RadixTree<TValue> : PrefixTree<TValue>
 {
     #region Fields
@@ -55,8 +58,14 @@ public partial class RadixTree<TValue> : PrefixTree<TValue>
     {
         ArgumentException.ThrowIfNullOrEmpty(key, nameof(key));
 
+        if (Find(key, _root, out var node) && node.TryGetValue(out var foundValue))
+        {
+            value = foundValue;
+            return true;
+        }
+
         value = default!;
-        return Find(key, _root, out var node) && node.TryGetValue(out value);
+        return false;
     }
 
     /// <inheritdoc/>
@@ -147,9 +156,10 @@ public partial class RadixTree<TValue> : PrefixTree<TValue>
 
         for (var suffix = key; ;)
         {
-            if (!node.Children.TryGetValue(suffix[0], out node))
+            if (!node.Children.TryGetValue(suffix[0], out var nextNode) || nextNode is null)
                 return false;
 
+            node = nextNode;
             var span = node.Label.AsSpan();
             var i = GetCommonPrefixLength(suffix, span);
 
@@ -173,8 +183,9 @@ public partial class RadixTree<TValue> : PrefixTree<TValue>
         {
             c = suffix[0];
 
-            if (node.Children.TryGetValue(c, out BaseNode nextNode))
+            if (node.Children.TryGetValue(c, out var foundNode) && foundNode is not null)
             {
+                var nextNode = foundNode;
                 var label = nextNode.Label.AsSpan();
                 var i = GetCommonPrefixLength(label, suffix);
                 // suffix starts with label

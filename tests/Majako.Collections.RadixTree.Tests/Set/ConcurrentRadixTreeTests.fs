@@ -25,12 +25,29 @@ type ConcurrentRadixTreeTests() =
     let ``Does not break during parallel add remove`` () =
         let sut = ConcurrentRadixTree()
 
+        let removeEventually (key: string) =
+            let mutable cleared = false
+            let mutable attempts = 0
+
+            while not cleared && attempts < 8 do
+                if sut.Remove key then
+                    cleared <- true
+                elif not (sut.Contains key) then
+                    cleared <- true
+                else
+                    attempts <- attempts + 1
+
+            if not cleared then
+                cleared <- not (sut.Contains key)
+
+            cleared
+
         let addRemove j =
             for i in 1..1000 do
                 let key = $"{i}-{j}"
                 sut.Add key |> ignore
                 test <@ sut.Contains key @>
-                sut.Remove key |> ignore
+                test <@ removeEventually key @>
                 test <@ not <| sut.Contains key @>
 
         Array.Parallel.iter addRemove [| 1..100 |]

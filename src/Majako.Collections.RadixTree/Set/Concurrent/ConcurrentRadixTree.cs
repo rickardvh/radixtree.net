@@ -1,8 +1,11 @@
-﻿namespace Majako.Collections.RadixTree.Concurrent;
+using System.Diagnostics.CodeAnalysis;
+
+namespace Majako.Collections.RadixTree.Concurrent;
 
 /// <summary>
 /// A thread-safe implementation of a radix tree
 /// </summary>
+[SuppressMessage("Design", "CA1051:Do not declare visible instance fields", Justification = "Backing dictionary field is intentionally exposed to derived set wrapper internals.")]
 public partial class ConcurrentRadixTree : PrefixTree
 {
     #region Fields
