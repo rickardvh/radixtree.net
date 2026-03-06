@@ -38,7 +38,7 @@ public partial class ConcurrentRadixTree<TValue>
             var wrapper = _value;
             value = default;
 
-            if (wrapper == null)
+            if (wrapper == null || wrapper == _deleted)
                 return false;
 
             value = wrapper.Value;
@@ -51,7 +51,7 @@ public partial class ConcurrentRadixTree<TValue>
             var wrapper = Interlocked.Exchange(ref _value, null);
             value = default;
 
-            if (wrapper == null)
+            if (wrapper == null || wrapper == _deleted)
                 return false;
 
             value = wrapper.Value;
