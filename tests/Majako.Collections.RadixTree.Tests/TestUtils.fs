@@ -4,7 +4,7 @@ module Majako.Collections.RadixTree.Tests.TestUtils
 open Swensen.Unquote.Assertions
 open System.Diagnostics
 open System
-open Xunit.Abstractions
+open Xunit
 open System.Threading.Tasks
 
 /// Assertion comparing two sequences for equality, ignoring order

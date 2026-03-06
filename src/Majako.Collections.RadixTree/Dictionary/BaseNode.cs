@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace Majako.Collections.RadixTree;
 
 public abstract partial class PrefixTree<TValue>
@@ -5,14 +7,14 @@ public abstract partial class PrefixTree<TValue>
     protected abstract class BaseNode(string label = "")
     {
         // used to avoid keeping a separate boolean flag that would use another byte per node
-        protected static readonly ValueWrapper _deleted = new(default);
-        protected abstract ValueWrapper Value { get; set; }
+        protected static readonly ValueWrapper _deleted = new(default!);
+        protected abstract ValueWrapper? Value { get; set; }
 
         public virtual string Label { get; } = label;
 
         public virtual bool IsDeleted => Value == _deleted;
 
-        public virtual bool HasValue => Value != null && !IsDeleted;
+        public virtual bool HasValue => Value is not null && !IsDeleted;
 
 
         public BaseNode(ReadOnlySpan<char> label) : this(label.ToString())
@@ -38,9 +40,9 @@ public abstract partial class PrefixTree<TValue>
         /// <returns>
         /// True if value exists, otherwise false
         /// </returns>
-        public abstract bool TryGetValue(out TValue value);
+        public abstract bool TryGetValue([MaybeNullWhen(false)] out TValue value);
 
-        public abstract bool TryRemoveValue(out TValue value);
+        public abstract bool TryRemoveValue([MaybeNullWhen(false)] out TValue value);
 
         public abstract TValue GetOrAddValue(TValue value);
 

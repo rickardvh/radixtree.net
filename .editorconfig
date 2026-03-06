@@ -1,0 +1,9 @@
+root = true
+
+[*.cs]
+csharp_style_namespace_declarations = file_scoped:warning
+dotnet_style_prefer_collection_expression = when_types_loosely_match:warning
+dotnet_diagnostic.IDE0161.severity = warning
+dotnet_diagnostic.IDE0028.severity = warning
+dotnet_diagnostic.IDE0300.severity = warning
+dotnet_diagnostic.IDE0301.severity = warning

@@ -97,7 +97,7 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
     {
         ArgumentException.ThrowIfNullOrEmpty(key, nameof(key));
 
-        value = default;
+        value = default!;
         var spinWait = new SpinWait();
         var retries = 0;
 
@@ -771,14 +771,14 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
     /// <param name="key">The key to remove</param>
     /// <param name="valueWrapper">(Optional) The value to remove. If specified, the node will only be removed if its value matches the wrapped value</param>
     /// <returns></returns>
-    protected virtual bool Remove(BaseNode subtreeRoot, ReadOnlySpan<char> key, ValueWrapper valueWrapper = null)
+    protected virtual bool Remove(BaseNode subtreeRoot, ReadOnlySpan<char> key, ValueWrapper? valueWrapper = null)
     {
         var spinWait = new SpinWait();
         var retries = 0;
 
         while (true)
         {
-            BaseNode node = null;
+            BaseNode? node = null;
             var parent = subtreeRoot;
             var shouldRetry = false;
 
@@ -827,7 +827,7 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
                         break;
                     }
 
-                    if (valueWrapper != null)
+                    if (valueWrapper is not null)
                     {
                         if (!node.TryGetValue(out var value) || !EqualityComparer<TValue>.Default.Equals(value, valueWrapper.Value))
                             return false;
@@ -885,7 +885,7 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
         }
     }
 
-    protected bool RemoveAndRestructure(BaseNode node, BaseNode parent)
+    protected bool RemoveAndRestructure(BaseNode? node, BaseNode? parent)
     {
         if (node == null || parent == null || node.IsDeleted || parent.IsDeleted)
             return false;
@@ -928,7 +928,7 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
             return true;
         }
 
-        subtreeRoot = default;
+        subtreeRoot = null!;
         var spinWait = new SpinWait();
         var retries = 0;
 
@@ -1024,7 +1024,7 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
         HashSet<BaseNode> visited,
         out string error)
     {
-        error = default;
+        error = string.Empty;
 
         if (node == null)
         {

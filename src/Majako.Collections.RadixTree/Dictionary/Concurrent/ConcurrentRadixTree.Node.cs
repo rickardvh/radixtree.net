@@ -7,8 +7,8 @@ public partial class ConcurrentRadixTree<TValue>
     /// </summary>
     protected class Node : BaseNode
     {
-        protected volatile ValueWrapper _value;
-        protected override ValueWrapper Value { get => _value; set => _value = value; }
+        protected volatile ValueWrapper? _value;
+        protected override ValueWrapper? Value { get => _value; set => _value = value; }
 
         public Node(string label = "") : base(label)
         {
@@ -36,7 +36,7 @@ public partial class ConcurrentRadixTree<TValue>
         public override bool TryGetValue(out TValue value)
         {
             var wrapper = _value;
-            value = default;
+            value = default!;
 
             if (wrapper == null || wrapper == _deleted)
                 return false;
@@ -49,7 +49,7 @@ public partial class ConcurrentRadixTree<TValue>
         public override bool TryRemoveValue(out TValue value)
         {
             var wrapper = Interlocked.Exchange(ref _value, null);
-            value = default;
+            value = default!;
 
             if (wrapper == null || wrapper == _deleted)
                 return false;

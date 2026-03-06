@@ -55,7 +55,7 @@ public partial class RadixTree<TValue> : PrefixTree<TValue>
     {
         ArgumentException.ThrowIfNullOrEmpty(key, nameof(key));
 
-        value = default;
+        value = default!;
         return Find(key, _root, out var node) && node.TryGetValue(out value);
     }
 
@@ -235,9 +235,10 @@ public partial class RadixTree<TValue> : PrefixTree<TValue>
     /// <param name="key">The key to remove</param>
     /// <param name="valueWrapper">(Optional) The value to remove. If specified, the node will only be removed if its value matches the wrapped value</param>
     /// <returns></returns>
-    protected virtual bool Remove(BaseNode subtreeRoot, ReadOnlySpan<char> key, ValueWrapper valueWrapper = null)
+    protected virtual bool Remove(BaseNode subtreeRoot, ReadOnlySpan<char> key, ValueWrapper? valueWrapper = null)
     {
-        BaseNode node = null, grandparent = null;
+        BaseNode? node = null;
+        BaseNode? grandparent = null;
         var parent = subtreeRoot;
 
         for (var i = 0; i < key.Length;)
@@ -272,6 +273,9 @@ public partial class RadixTree<TValue> : PrefixTree<TValue>
             parent = node;
         }
 
+        if (node is null)
+            return false;
+
         var c = node.Label[0];
         var nChildren = node.Children.Count;
 
@@ -281,7 +285,7 @@ public partial class RadixTree<TValue> : PrefixTree<TValue>
             parent.Children.Remove(c);
 
             // since we removed a node, we may be able to merge a lone sibling with the parent
-            if (parent.Children.Count == 1 && grandparent != null && !parent.HasValue)
+            if (parent.Children.Count == 1 && grandparent is not null && !parent.HasValue)
             {
                 c = parent.Label[0];
                 var child = parent.Children.First().Value;
@@ -307,7 +311,7 @@ public partial class RadixTree<TValue> : PrefixTree<TValue>
             return true;
         }
 
-        subtreeRoot = default;
+        subtreeRoot = null!;
         var node = _root;
         var parent = node;
 

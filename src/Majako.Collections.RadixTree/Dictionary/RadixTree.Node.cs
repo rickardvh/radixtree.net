@@ -7,9 +7,9 @@ public partial class RadixTree<TValue>
     /// </summary>
     protected class Node : BaseNode
     {
-        protected ValueWrapper _value;
+        protected ValueWrapper? _value;
 
-        protected override ValueWrapper Value { get => _value; set => _value = value; }
+        protected override ValueWrapper? Value { get => _value; set => _value = value; }
 
         public Node(string label = "") : base(label)
         {
@@ -38,7 +38,7 @@ public partial class RadixTree<TValue>
         public override bool TryGetValue(out TValue value)
         {
             var wrapper = Value;
-            value = default;
+            value = default!;
 
             if (wrapper == null)
                 return false;
@@ -50,7 +50,7 @@ public partial class RadixTree<TValue>
 
         public override bool TryRemoveValue(out TValue value)
         {
-            value = default;
+            value = default!;
             if (Value == null)
                 return false;
             value = Value.Value;
