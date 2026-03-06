@@ -34,6 +34,23 @@ type ConcurrentRadixTreePropertyTests() =
         && hasLongerAfterReadd
 
     [<Property>]
+    member _.``Parallel shared-item adds should keep all items reachable``(prefix: NonEmptyString, suffixes: list<NonEmptyString>) =
+        let items =
+            suffixes
+            |> List.map (fun s -> prefix.Get + "-" + s.Get)
+            |> List.distinct
+            |> List.truncate 32
+
+        let sut = ConcurrentRadixTree()
+
+        [| 1 .. 8 |]
+        |> Array.Parallel.iter (fun _ ->
+            for item in items do
+                sut.Add(item) |> ignore)
+
+        items |> List.forall sut.Contains
+
+    [<Property>]
     member _.``Parallel mixed add/remove on overlapping prefixes should keep deterministic final membership``
         (prefix: NonEmptyString, suffixes: list<NonEmptyString>)
         =

@@ -644,12 +644,13 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
         var suffixString = suffix.ToString();
         var suffixLength = suffix.Length;
         const string suffixParamName = "suffix";
-        BaseNode resultNode = null;
         var parentLock = GetLock(parent);
         var childLock = GetLock(child);
 
-        var success = TryWithOrderedWriteLocks(parentLock, childLock, () =>
+        bool TrySplitCore(out BaseNode resultNode)
         {
+            resultNode = default;
+
             if (parent.IsDeleted || child.IsDeleted || !IsCurrentChild(parent, parentEdge, child))
                 return false;
 
@@ -702,10 +703,69 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
 
             resultNode = outNode;
             return true;
-        });
+        }
 
-        addedNode = resultNode;
-        return success;
+        if (parentLock == childLock)
+        {
+            if (!parentLock.TryEnterWriteLock(0))
+                return false;
+
+            try
+            {
+                return TrySplitCore(out addedNode);
+            }
+            finally
+            {
+                parentLock.ExitWriteLock();
+            }
+        }
+
+        var first = parentLock;
+        var second = childLock;
+        var firstHash = RuntimeHelpers.GetHashCode(first);
+        var secondHash = RuntimeHelpers.GetHashCode(second);
+        var equalHashes = firstHash == secondHash;
+
+        if (firstHash > secondHash)
+            (first, second) = (second, first);
+
+        var spinWait = new SpinWait();
+        var attempts = 0;
+        while (attempts < 256)
+        {
+            if (first.TryEnterWriteLock(0))
+            {
+                try
+                {
+                    if (second.TryEnterWriteLock(0))
+                    {
+                        try
+                        {
+                            return TrySplitCore(out addedNode);
+                        }
+                        finally
+                        {
+                            second.ExitWriteLock();
+                        }
+                    }
+                }
+                finally
+                {
+                    first.ExitWriteLock();
+                }
+            }
+
+            attempts++;
+            if (equalHashes)
+                (first, second) = (second, first);
+
+            if (attempts % 64 == 0)
+                Thread.Yield();
+            else
+                spinWait.SpinOnce();
+        }
+
+        return false;
     }
 
     /// <summary>

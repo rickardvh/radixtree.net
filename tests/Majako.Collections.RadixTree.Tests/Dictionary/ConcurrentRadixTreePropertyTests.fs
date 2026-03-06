@@ -24,6 +24,26 @@ type ConcurrentRadixTreePropertyTests() =
             found)
 
     [<Property>]
+    member _.``Parallel shared-key upserts should keep all keys reachable``(prefix: NonEmptyString, suffixes: list<NonEmptyString>) =
+        let keys =
+            suffixes
+            |> List.map (fun s -> prefix.Get + "-" + s.Get)
+            |> List.distinct
+            |> List.truncate 32
+
+        let sut = ConcurrentRadixTree<int>()
+
+        [| 1 .. 8 |]
+        |> Array.Parallel.iter (fun worker ->
+            for key in keys do
+                sut.[key] <- worker)
+
+        keys
+        |> List.forall (fun key ->
+            let found, _ = sut.TryGetValue key
+            found)
+
+    [<Property>]
     member _.``Removing a prefix key should keep longer keys reachable and allow reinsert``
         (prefix: NonEmptyString, suffix: NonEmptyString, value1: int, value2: int)
         =
