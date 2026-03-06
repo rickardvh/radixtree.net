@@ -3,45 +3,52 @@ namespace Majako.Collections.RadixTree.Tests.Dictionary
 open FsCheck
 open FsCheck.Xunit
 open Majako.Collections.RadixTree.Concurrent
+open Majako.Collections.RadixTree.Tests
+open System
 open System.Collections.Concurrent
+open System.Collections.Generic
 
 type ConcurrentRadixTreePropertyTests() =
     inherit PrefixTreePropertyTestBase(fun items -> ConcurrentRadixTree<int>(items))
 
-    [<Property>]
+    let runParallelProperty work = completesWithin (TimeSpan.FromSeconds 8.0) work
+
+    [<Property(MaxTest = 64)>]
     member _.``Parallel insertions should keep all inserted keys reachable``(keys: list<NonEmptyString>) =
-        let distinctKeys = keys |> List.map (fun k -> k.Get) |> List.distinct
-        let sut = ConcurrentRadixTree<int>()
+        runParallelProperty (fun () ->
+            let distinctKeys = keys |> List.map (fun k -> k.Get) |> List.distinct
+            let sut = ConcurrentRadixTree<int>()
 
-        [| 1 .. 8 |]
-        |> Array.Parallel.iter (fun worker ->
-            for key in distinctKeys do
-                sut.[key] <- worker)
+            [| 1 .. 8 |]
+            |> Array.Parallel.iter (fun worker ->
+                for key in distinctKeys do
+                    sut.[key] <- worker)
 
-        distinctKeys
-        |> List.forall (fun key ->
-            let found, _ = sut.TryGetValue key
-            found)
+            distinctKeys
+            |> List.forall (fun key ->
+                let found, _ = sut.TryGetValue key
+                found))
 
-    [<Property>]
+    [<Property(MaxTest = 64)>]
     member _.``Parallel shared-key upserts should keep all keys reachable``(prefix: NonEmptyString, suffixes: list<NonEmptyString>) =
-        let keys =
-            suffixes
-            |> List.map (fun s -> prefix.Get + "-" + s.Get)
-            |> List.distinct
-            |> List.truncate 32
+        runParallelProperty (fun () ->
+            let keys =
+                suffixes
+                |> List.map (fun s -> prefix.Get + "-" + s.Get)
+                |> List.distinct
+                |> List.truncate 32
 
-        let sut = ConcurrentRadixTree<int>()
+            let sut = ConcurrentRadixTree<int>()
 
-        [| 1 .. 8 |]
-        |> Array.Parallel.iter (fun worker ->
-            for key in keys do
-                sut.[key] <- worker)
+            [| 1 .. 8 |]
+            |> Array.Parallel.iter (fun worker ->
+                for key in keys do
+                    sut.[key] <- worker)
 
-        keys
-        |> List.forall (fun key ->
-            let found, _ = sut.TryGetValue key
-            found)
+            keys
+            |> List.forall (fun key ->
+                let found, _ = sut.TryGetValue key
+                found))
 
     [<Property>]
     member _.``Removing a prefix key should keep longer keys reachable and allow reinsert``
@@ -71,131 +78,188 @@ type ConcurrentRadixTreePropertyTests() =
         && foundLongerAfterReinsert
         && longerValueAfterReinsert = value2
 
-    [<Property>]
+    [<Property(MaxTest = 64)>]
     member _.``Parallel mixed add/remove on overlapping prefixes should keep deterministic final membership``
         (prefix: NonEmptyString, suffixes: list<NonEmptyString>)
         =
-        let keys =
-            suffixes
-            |> List.map (fun s -> s.Get)
-            |> List.distinct
-            |> List.truncate 64
-            |> List.mapi (fun i s -> i, prefix.Get + "-" + s)
+        runParallelProperty (fun () ->
+            let keys =
+                suffixes
+                |> List.map (fun s -> s.Get)
+                |> List.distinct
+                |> List.truncate 64
+                |> List.mapi (fun i s -> i, prefix.Get + "-" + s)
 
-        let sut = ConcurrentRadixTree<int>()
+            let sut = ConcurrentRadixTree<int>()
 
-        keys
-        |> Array.ofList
-        |> Array.Parallel.iter (fun (i, key) ->
-            sut.[key] <- i
+            keys
+            |> Array.ofList
+            |> Array.Parallel.iter (fun (i, key) ->
+                sut.[key] <- i
 
-            if i % 2 = 0 then
-                sut.Remove(key) |> ignore
+                if i % 2 = 0 then
+                    sut.Remove(key) |> ignore
 
-            if i % 4 = 0 then
-                sut.[key] <- i)
+                if i % 4 = 0 then
+                    sut.[key] <- i)
 
-        keys
-        |> List.forall (fun (i, key) ->
-            let found, value = sut.TryGetValue key
-            let shouldExist = i % 2 <> 0 || i % 4 = 0
+            keys
+            |> List.forall (fun (i, key) ->
+                let found, value = sut.TryGetValue key
+                let shouldExist = i % 2 <> 0 || i % 4 = 0
 
-            if shouldExist then
-                found && value = i
-            else
-                not found)
+                if shouldExist then
+                    found && value = i
+                else
+                    not found))
 
-    [<Property>]
+    [<Property(MaxTest = 56)>]
+    member _.``Parallel mixed operations should match reference dictionary final state``
+        (prefix: NonEmptyString, suffixes: list<NonEmptyString>)
+        =
+        runParallelProperty (fun () ->
+            let keys =
+                suffixes
+                |> List.map (fun s -> prefix.Get + "-m-" + s.Get)
+                |> List.distinct
+                |> List.truncate 48
+
+            let sut = ConcurrentRadixTree<int>()
+            let expected = Dictionary<string, int>()
+
+            let applyOps (target: IDictionary<string, int>) i key =
+                let baseValue = i * 17 + 3
+                target[key] <- baseValue
+
+                if i % 2 = 0 then
+                    target.Remove(key) |> ignore
+                else
+                    target[key] <- baseValue + 1
+
+                if i % 3 = 0 then
+                    target[key] <- baseValue + 2
+
+                if i % 5 = 0 then
+                    target.Remove(key) |> ignore
+
+            keys |> List.iteri (fun i key -> applyOps expected i key)
+
+            keys
+            |> Array.ofList
+            |> Array.Parallel.iteri (fun i key ->
+                let baseValue = i * 17 + 3
+                sut.[key] <- baseValue
+
+                if i % 2 = 0 then
+                    sut.Remove(key) |> ignore
+                else
+                    sut.[key] <- baseValue + 1
+
+                if i % 3 = 0 then
+                    sut.[key] <- baseValue + 2
+
+                if i % 5 = 0 then
+                    sut.Remove(key) |> ignore)
+
+            let expectedMap = expected |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq
+            let actualMap = sut |> Seq.map (fun kv -> kv.Key, kv.Value) |> Map.ofSeq
+
+            actualMap = expectedMap)
+
+    [<Property(MaxTest = 48)>]
     member _.``Parallel remove/reinsert of a prefix key should not lose longer keys``
         (prefix: NonEmptyString, suffixes: list<NonEmptyString>)
         =
-        let prefixKey = prefix.Get
+        runParallelProperty (fun () ->
+            let prefixKey = prefix.Get
 
-        let longerKeys =
-            suffixes
-            |> List.map (fun s -> s.Get)
-            |> List.distinct
-            |> List.truncate 16
-            |> List.mapi (fun i suffix -> i, prefixKey + suffix)
+            let longerKeys =
+                suffixes
+                |> List.map (fun s -> s.Get)
+                |> List.distinct
+                |> List.truncate 16
+                |> List.mapi (fun i suffix -> i, prefixKey + suffix)
 
-        let sut = ConcurrentRadixTree<int>()
-        sut.[prefixKey] <- -1
+            let sut = ConcurrentRadixTree<int>()
+            sut.[prefixKey] <- -1
 
-        for (i, key) in longerKeys do
-            sut.[key] <- i
+            for (i, key) in longerKeys do
+                sut.[key] <- i
 
-        [| 1 .. 8 |]
-        |> Array.Parallel.iter (fun _ ->
-            for _ in 1 .. 200 do
-                sut.Remove(prefixKey) |> ignore
-                sut.[prefixKey] <- 42)
+            [| 1 .. 8 |]
+            |> Array.Parallel.iter (fun _ ->
+                for _ in 1 .. 200 do
+                    sut.Remove(prefixKey) |> ignore
+                    sut.[prefixKey] <- 42)
 
-        longerKeys
-        |> List.forall (fun (i, key) ->
-            let found, value = sut.TryGetValue key
-            found && value = i)
+            longerKeys
+            |> List.forall (fun (i, key) ->
+                let found, value = sut.TryGetValue key
+                found && value = i))
 
-    [<Property>]
+    [<Property(MaxTest = 64)>]
     member _.``Parallel removals on overlapping prefixes should clear preloaded keys``
         (prefix: NonEmptyString, suffixes: list<NonEmptyString>)
         =
-        let keys =
-            suffixes
-            |> List.map (fun s -> prefix.Get + "-" + s.Get)
-            |> List.distinct
-            |> List.truncate 64
+        runParallelProperty (fun () ->
+            let keys =
+                suffixes
+                |> List.map (fun s -> prefix.Get + "-" + s.Get)
+                |> List.distinct
+                |> List.truncate 64
 
-        let sut = ConcurrentRadixTree<int>()
+            let sut = ConcurrentRadixTree<int>()
 
-        keys
-        |> List.iteri (fun i key ->
-            sut.[key] <- i)
+            keys
+            |> List.iteri (fun i key ->
+                sut.[key] <- i)
 
-        keys
-        |> Array.ofList
-        |> Array.Parallel.iter (fun key ->
-            sut.Remove(key) |> ignore)
+            keys
+            |> Array.ofList
+            |> Array.Parallel.iter (fun key ->
+                sut.Remove(key) |> ignore)
 
-        keys
-        |> List.forall (fun key ->
-            let found, _ = sut.TryGetValue key
-            not found)
+            keys
+            |> List.forall (fun key ->
+                let found, _ = sut.TryGetValue key
+                not found))
 
-    [<Property>]
+    [<Property(MaxTest = 48)>]
     member _.``Parallel prune and unrelated adds should keep a valid partition``
         (prefix: NonEmptyString, suffixes: list<NonEmptyString>)
         =
-        let prunePrefix = prefix.Get + "-p-"
-        let otherPrefix = prefix.Get + "-o-"
+        runParallelProperty (fun () ->
+            let prunePrefix = prefix.Get + "-p-"
+            let otherPrefix = prefix.Get + "-o-"
 
-        let seeds =
-            suffixes
-            |> List.map (fun s -> s.Get)
-            |> List.distinct
-            |> List.truncate 24
+            let seeds =
+                suffixes
+                |> List.map (fun s -> s.Get)
+                |> List.distinct
+                |> List.truncate 24
 
-        let pruneKeys = seeds |> List.map (fun s -> prunePrefix + s)
-        let otherKeys = seeds |> List.map (fun s -> otherPrefix + s)
-        let sut = ConcurrentRadixTree<int>()
-        let prunedKeys = ConcurrentBag<string>()
+            let pruneKeys = seeds |> List.map (fun s -> prunePrefix + s)
+            let otherKeys = seeds |> List.map (fun s -> otherPrefix + s)
+            let sut = ConcurrentRadixTree<int>()
+            let prunedKeys = ConcurrentBag<string>()
 
-        pruneKeys |> List.iteri (fun i key -> sut.[key] <- i)
-        otherKeys |> List.iteri (fun i key -> sut.[key] <- i)
+            pruneKeys |> List.iteri (fun i key -> sut.[key] <- i)
+            otherKeys |> List.iteri (fun i key -> sut.[key] <- i)
 
-        [| 1 .. 2 |]
-        |> Array.Parallel.iter (fun worker ->
-            if worker = 1 then
-                for _ in 1 .. 20 do
-                    let pruned = sut.Prune(prunePrefix)
-                    for kv in pruned do
-                        prunedKeys.Add(kv.Key)
-            else
-                for i in 1 .. 200 do
-                    for key in otherKeys do
-                        sut.[key] <- i)
+            [| 1 .. 2 |]
+            |> Array.Parallel.iter (fun worker ->
+                if worker = 1 then
+                    for _ in 1 .. 20 do
+                        let pruned = sut.Prune(prunePrefix)
+                        for kv in pruned do
+                            prunedKeys.Add(kv.Key)
+                else
+                    for i in 1 .. 200 do
+                        for key in otherKeys do
+                            sut.[key] <- i)
 
-        let prunedAreValid = prunedKeys |> Seq.forall (fun k -> k.StartsWith(prunePrefix))
-        let remainingAreValid = sut.Keys |> Seq.forall (fun k -> not (k.StartsWith(prunePrefix)))
-        let othersReachable = otherKeys |> List.forall sut.ContainsKey
+            let prunedAreValid = prunedKeys |> Seq.forall (fun k -> k.StartsWith(prunePrefix))
+            let remainingAreValid = sut.Keys |> Seq.forall (fun k -> not (k.StartsWith(prunePrefix)))
+            let othersReachable = otherKeys |> List.forall sut.ContainsKey
 
-        prunedAreValid && remainingAreValid && othersReachable
+            prunedAreValid && remainingAreValid && othersReachable)

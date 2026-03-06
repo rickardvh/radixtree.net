@@ -5,6 +5,7 @@ open Swensen.Unquote.Assertions
 open System.Diagnostics
 open System
 open Xunit.Abstractions
+open System.Threading.Tasks
 
 /// Assertion comparing two sequences for equality, ignoring order
 let (==!) xs ys =
@@ -37,3 +38,11 @@ let profile (output: ITestOutputHelper) f =
     let delta = GC.GetTotalMemory(true) - memory
     output.WriteLine(sprintf "Elapsed time: %.2f s" (float sw.ElapsedMilliseconds / 1000.0))
     output.WriteLine(sprintf "Memory usage: %.2f MB" (float delta / float 2 ** 20))
+
+let completesWithin (timeout: TimeSpan) (work: unit -> bool) =
+    let task = Task.Run(fun () -> work())
+
+    if task.Wait(timeout) then
+        task.GetAwaiter().GetResult()
+    else
+        false

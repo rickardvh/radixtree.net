@@ -1,0 +1,102 @@
+{
+  "catastrophicRegressionPercent": 20.0,
+  "warningRegressionPercent": 5.0,
+  "scenarios": [
+    {
+      "method": "ConcurrentRadixTreeAddParallel",
+      "threadCount": 1,
+      "contentionPercent": 0,
+      "medianUs": 1155.4
+    },
+    {
+      "method": "ConcurrentRadixTreeAddParallel",
+      "threadCount": 1,
+      "contentionPercent": 50,
+      "medianUs": 1146.9
+    },
+    {
+      "method": "ConcurrentRadixTreeAddParallel",
+      "threadCount": 2,
+      "contentionPercent": 0,
+      "medianUs": 3480.0
+    },
+    {
+      "method": "ConcurrentRadixTreeAddParallel",
+      "threadCount": 2,
+      "contentionPercent": 50,
+      "medianUs": 2958.7
+    },
+    {
+      "method": "ConcurrentRadixTreeAddParallel",
+      "threadCount": 4,
+      "contentionPercent": 0,
+      "medianUs": 8107.2
+    },
+    {
+      "method": "ConcurrentRadixTreeAddParallel",
+      "threadCount": 4,
+      "contentionPercent": 50,
+      "medianUs": 6481.9
+    },
+    {
+      "method": "ConcurrentRadixTreeAddParallel",
+      "threadCount": 8,
+      "contentionPercent": 0,
+      "medianUs": 22586.1
+    },
+    {
+      "method": "ConcurrentRadixTreeAddParallel",
+      "threadCount": 8,
+      "contentionPercent": 50,
+      "medianUs": 17547.3
+    },
+    {
+      "method": "ConcurrentRadixTreeTryGetParallel",
+      "threadCount": 1,
+      "contentionPercent": 0,
+      "medianUs": 28.362
+    },
+    {
+      "method": "ConcurrentRadixTreeTryGetParallel",
+      "threadCount": 1,
+      "contentionPercent": 50,
+      "medianUs": 29.255
+    },
+    {
+      "method": "ConcurrentRadixTreeTryGetParallel",
+      "threadCount": 2,
+      "contentionPercent": 0,
+      "medianUs": 79.551
+    },
+    {
+      "method": "ConcurrentRadixTreeTryGetParallel",
+      "threadCount": 2,
+      "contentionPercent": 50,
+      "medianUs": 82.119
+    },
+    {
+      "method": "ConcurrentRadixTreeTryGetParallel",
+      "threadCount": 4,
+      "contentionPercent": 0,
+      "medianUs": 173.828
+    },
+    {
+      "method": "ConcurrentRadixTreeTryGetParallel",
+      "threadCount": 4,
+      "contentionPercent": 50,
+      "medianUs": 230.564
+    },
+    {
+      "method": "ConcurrentRadixTreeTryGetParallel",
+      "threadCount": 8,
+      "contentionPercent": 0,
+      "medianUs": 428.179
+    },
+    {
+      "method": "ConcurrentRadixTreeTryGetParallel",
+      "threadCount": 8,
+      "contentionPercent": 50,
+      "medianUs": 373.618
+    }
+  ]
+}

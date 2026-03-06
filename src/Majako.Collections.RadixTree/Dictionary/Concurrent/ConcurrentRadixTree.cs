@@ -9,6 +9,14 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
 {
     #region Fields
 
+    protected const int RetrySpinResetThreshold = 64;
+    protected const int ThreadYieldInterval = 64;
+    protected const int MaxLookupRetries = 512;
+    protected const int MaxMutationRetries = 1024;
+    protected const int MaxDualLockAttempts = 4096;
+    protected const int MaxSplitDualLockAttempts = 256;
+    protected const int MaxCompactionWaitSpins = 1024;
+
     protected volatile BaseNode _root = new Node();
     protected readonly StripedReaderWriterLock _locks = new();
     protected readonly ReaderWriterLockSlim _structureLock = new();
@@ -96,7 +104,18 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
         while (true)
         {
             if (!Find(key, _root, out var node))
+            {
+                if (Volatile.Read(ref _activeMutations) != 0)
+                {
+                    if (ResetRetryBudgetIfNeeded(ref spinWait, ref retries, MaxLookupRetries))
+                        continue;
+
+                    BackoffMutation(ref spinWait, ref retries);
+                    continue;
+                }
+
                 return false;
+            }
 
             if (node.TryGetValue(out value))
                 return true;
@@ -104,8 +123,8 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
             if (!node.IsDeleted)
                 return false;
 
-            if (retries >= 512)
-                return false;
+            if (ResetRetryBudgetIfNeeded(ref spinWait, ref retries, MaxLookupRetries))
+                continue;
 
             BackoffMutation(ref spinWait, ref retries);
         }
@@ -335,7 +354,7 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
             var spins = 0;
             while (Volatile.Read(ref _activeMutations) != 0)
             {
-                if (++spins >= 1024)
+                if (++spins >= MaxCompactionWaitSpins)
                     return;
 
                 spinWait.SpinOnce();
@@ -370,21 +389,28 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
     protected virtual void BackoffMutation(ref SpinWait spinWait, ref int retries)
     {
         retries++;
-        if (retries < 64)
-        {
+        if (retries % RetrySpinResetThreshold == 0)
+            Thread.Yield();
+        else
             spinWait.SpinOnce();
-            return;
-        }
+    }
+
+    protected virtual bool ResetRetryBudgetIfNeeded(ref SpinWait spinWait, ref int retries, int maxRetries)
+    {
+        if (retries < maxRetries)
+            return false;
 
         retries = 0;
         spinWait = new SpinWait();
         Thread.Yield();
+        return true;
     }
 
     protected virtual bool TryWithOrderedWriteLocks(
         ReaderWriterLockSlim lock1,
         ReaderWriterLockSlim lock2,
-        Func<bool> action)
+        Func<bool> action,
+        int maxAttempts = MaxDualLockAttempts)
     {
         if (lock1 == lock2)
         {
@@ -409,7 +435,7 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
         var spinWait = new SpinWait();
         var attempts = 0;
 
-        while (attempts < 4096)
+        while (attempts < maxAttempts)
         {
             if (first.TryEnterWriteLock(0))
             {
@@ -437,7 +463,7 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
             if (equalHashes)
                 (first, second) = (second, first);
 
-            if (attempts % 64 == 0)
+            if (attempts % ThreadYieldInterval == 0)
                 Thread.Yield();
             else
                 spinWait.SpinOnce();
@@ -522,8 +548,8 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
             if (!shouldRetry)
                 return false;
 
-            if (retries >= 1024)
-                return false;
+            if (ResetRetryBudgetIfNeeded(ref spinWait, ref retries, MaxMutationRetries))
+                continue;
 
             BackoffMutation(ref spinWait, ref retries);
         }
@@ -545,74 +571,93 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
 
                 var c = suffix[0];
                 var parentLock = GetLock(node);
+                BaseNode nextNode = null;
                 BaseNode splitParent = null;
                 BaseNode splitChild = null;
                 char splitEdge = default;
                 ReadOnlySpan<char> splitSuffix = default;
+                var needsInsert = false;
+                var needsUpdate = false;
 
-                using (new LockWrapper(parentLock, LockType.UpgradeableRead))
+                using (new LockWrapper(parentLock, LockType.Read))
                 {
                     if (node.IsDeleted)
                         break;
 
-                    if (!node.Children.TryGetValue(c, out BaseNode nextNode))
+                    if (!node.Children.TryGetValue(c, out nextNode))
                     {
-                        using (new LockWrapper(parentLock, LockType.Write))
+                        needsInsert = true;
+                    }
+                    else
+                    {
+                        if (nextNode.IsDeleted)
+                            break;
+
+                        var label = nextNode.Label.AsSpan();
+                        var i = GetCommonPrefixLength(label, suffix);
+                        // suffix starts with label
+                        if (i == label.Length)
                         {
-                            if (node.IsDeleted)
-                                break;
-
-                            if (node.Children.TryGetValue(c, out nextNode))
+                            // keys are equal - this is the node we're looking for
+                            if (i == suffix.Length)
+                            {
+                                needsUpdate = true;
+                            }
+                            else
+                            {
+                                // advance the suffix and continue the search from nextNode
+                                suffix = suffix[label.Length..];
+                                node = nextNode;
                                 continue;
-
-                            var suffixNode = new Node(suffix);
-                            suffixNode.SetValue(value);
-
-                            return node.Children[c] = suffixNode;
+                            }
                         }
+                        else
+                        {
+                            splitParent = node;
+                            splitChild = nextNode;
+                            splitEdge = c;
+                            splitSuffix = suffix;
+                        }
+                    }
+                }
+
+                if (needsInsert)
+                {
+                    using (new LockWrapper(parentLock, LockType.Write))
+                    {
+                        if (node.IsDeleted)
+                            break;
+
+                        if (node.Children.TryGetValue(c, out _))
+                            continue;
+
+                        var suffixNode = new Node(suffix);
+                        suffixNode.SetValue(value);
+
+                        return node.Children[c] = suffixNode;
+                    }
+                }
+
+                if (needsUpdate)
+                {
+                    using (new LockWrapper(parentLock, LockType.Write))
+                    {
+                        if (node.IsDeleted || nextNode.IsDeleted || !IsCurrentChild(node, c, nextNode))
+                            break;
+
+                        if (throwOnExisting && nextNode.HasValue)
+                            throw new ArgumentException("An item with the same key has already been added.", nameof(key));
+
+                        if (overwrite || throwOnExisting)
+                            nextNode.SetValue(value);
+                        else
+                            nextNode.GetOrAddValue(value);
                     }
 
                     if (nextNode.IsDeleted)
                         break;
 
-                    var label = nextNode.Label.AsSpan();
-                    var i = GetCommonPrefixLength(label, suffix);
-                    // suffix starts with label
-                    if (i == label.Length)
-                    {
-                        // keys are equal - this is the node we're looking for
-                        if (i == suffix.Length)
-                        {
-                            using (new LockWrapper(parentLock, LockType.Write))
-                            {
-                                if (node.IsDeleted || nextNode.IsDeleted || !IsCurrentChild(node, c, nextNode))
-                                    break;
-
-                                if (throwOnExisting && nextNode.HasValue)
-                                    throw new ArgumentException("An item with the same key has already been added.", nameof(key));
-
-                                if (overwrite || throwOnExisting)
-                                    nextNode.SetValue(value);
-                                else
-                                    nextNode.GetOrAddValue(value);
-                            }
-
-                            if (nextNode.IsDeleted)
-                                break;
-
-                            return nextNode;
-                        }
-
-                        // advance the suffix and continue the search from nextNode
-                        suffix = suffix[label.Length..];
-                        node = nextNode;
-                        continue;
-                    }
-
-                    splitParent = node;
-                    splitChild = nextNode;
-                    splitEdge = c;
-                    splitSuffix = suffix;
+                    return nextNode;
                 }
 
                 if (splitParent != null
@@ -621,6 +666,9 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
 
                 break;
             }
+
+            if (ResetRetryBudgetIfNeeded(ref spinWait, ref retries, MaxMutationRetries))
+                continue;
 
             BackoffMutation(ref spinWait, ref retries);
         }
@@ -646,6 +694,7 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
         const string suffixParamName = "suffix";
         var parentLock = GetLock(parent);
         var childLock = GetLock(child);
+        BaseNode resultNode = null;
 
         bool TrySplitCore(out BaseNode resultNode)
         {
@@ -705,67 +754,14 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
             return true;
         }
 
-        if (parentLock == childLock)
-        {
-            if (!parentLock.TryEnterWriteLock(0))
-                return false;
+        var success = TryWithOrderedWriteLocks(
+            parentLock,
+            childLock,
+            () => TrySplitCore(out resultNode),
+            MaxSplitDualLockAttempts);
 
-            try
-            {
-                return TrySplitCore(out addedNode);
-            }
-            finally
-            {
-                parentLock.ExitWriteLock();
-            }
-        }
-
-        var first = parentLock;
-        var second = childLock;
-        var firstHash = RuntimeHelpers.GetHashCode(first);
-        var secondHash = RuntimeHelpers.GetHashCode(second);
-        var equalHashes = firstHash == secondHash;
-
-        if (firstHash > secondHash)
-            (first, second) = (second, first);
-
-        var spinWait = new SpinWait();
-        var attempts = 0;
-        while (attempts < 256)
-        {
-            if (first.TryEnterWriteLock(0))
-            {
-                try
-                {
-                    if (second.TryEnterWriteLock(0))
-                    {
-                        try
-                        {
-                            return TrySplitCore(out addedNode);
-                        }
-                        finally
-                        {
-                            second.ExitWriteLock();
-                        }
-                    }
-                }
-                finally
-                {
-                    first.ExitWriteLock();
-                }
-            }
-
-            attempts++;
-            if (equalHashes)
-                (first, second) = (second, first);
-
-            if (attempts % 64 == 0)
-                Thread.Yield();
-            else
-                spinWait.SpinOnce();
-        }
-
-        return false;
+        addedNode = resultNode;
+        return success;
     }
 
     /// <summary>
@@ -882,8 +878,8 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
             if (!shouldRetry)
                 return false;
 
-            if (retries >= 1024)
-                return false;
+            if (ResetRetryBudgetIfNeeded(ref spinWait, ref retries, MaxMutationRetries))
+                continue;
 
             BackoffMutation(ref spinWait, ref retries);
         }
@@ -933,38 +929,156 @@ public partial class ConcurrentRadixTree<TValue> : PrefixTree<TValue>
         }
 
         subtreeRoot = default;
-        var node = _root;
-        var parent = node;
+        var spinWait = new SpinWait();
+        var retries = 0;
 
-        for (var i = 0; i < prefix.Length; parent = node)
+        while (true)
         {
-            var c = prefix[i];
-            var parentLock = GetLock(parent);
-            using var _ = new LockWrapper(parentLock, LockType.UpgradeableRead);
+            var node = _root;
+            var parent = node;
+            var shouldRetry = false;
 
-            if (!parent.Children.TryGetValue(c, out node))
-                return false;
-
-            var label = node.Label.AsSpan();
-            var k = GetCommonPrefixLength(prefix[i..], label);
-
-            if (k == prefix.Length - i)
+            for (var i = 0; i < prefix.Length; parent = node)
             {
-                subtreeRoot = new Node(string.Concat(prefix[..i], label), node);
-                if (!prune)
-                    return true;
+                if (parent.IsDeleted)
+                {
+                    shouldRetry = true;
+                    break;
+                }
 
-                using (new LockWrapper(parentLock, LockType.Write))
-                    return parent.Children.Remove(c, out node);
+                var c = prefix[i];
+                var parentLock = GetLock(parent);
+                using var _ = new LockWrapper(parentLock, LockType.UpgradeableRead);
+
+                if (parent.IsDeleted)
+                {
+                    shouldRetry = true;
+                    break;
+                }
+
+                if (!parent.Children.TryGetValue(c, out node))
+                    return false;
+
+                if (node.IsDeleted || !IsCurrentChild(parent, c, node))
+                {
+                    shouldRetry = true;
+                    break;
+                }
+
+                var label = node.Label.AsSpan();
+                var k = GetCommonPrefixLength(prefix[i..], label);
+
+                if (k == prefix.Length - i)
+                {
+                    subtreeRoot = new Node(string.Concat(prefix[..i], label), node);
+                    if (!prune)
+                        return true;
+
+                    using (new LockWrapper(parentLock, LockType.Write))
+                    {
+                        if (parent.IsDeleted || node.IsDeleted || !IsCurrentChild(parent, c, node))
+                        {
+                            shouldRetry = true;
+                            break;
+                        }
+
+                        return parent.Children.Remove(c, out var _removedNode);
+                    }
+                }
+
+                if (k < label.Length)
+                {
+                    if (node.IsDeleted || !IsCurrentChild(parent, c, node))
+                    {
+                        shouldRetry = true;
+                        break;
+                    }
+
+                    return false;
+                }
+
+                i += label.Length;
             }
 
-            if (k < label.Length)
+            if (!shouldRetry)
                 return false;
 
-            i += label.Length;
+            if (ResetRetryBudgetIfNeeded(ref spinWait, ref retries, MaxMutationRetries))
+                continue;
+
+            BackoffMutation(ref spinWait, ref retries);
+        }
+    }
+
+    internal void AssertDebugInvariants()
+    {
+#if DEBUG
+        if (!TryValidateInvariants(_root, true, new HashSet<BaseNode>(ReferenceEqualityComparer.Instance), out var error))
+            throw new InvalidOperationException($"ConcurrentRadixTree invariant violation: {error}");
+#endif
+    }
+
+    protected virtual bool TryValidateInvariants(
+        BaseNode node,
+        bool isRoot,
+        HashSet<BaseNode> visited,
+        out string error)
+    {
+        error = default;
+
+        if (node == null)
+        {
+            error = "Encountered null node.";
+            return false;
         }
 
-        return false;
+        if (!visited.Add(node))
+        {
+            error = $"Cycle detected at node label '{node.Label}'.";
+            return false;
+        }
+
+        if (!isRoot && string.IsNullOrEmpty(node.Label))
+        {
+            error = "Non-root node has an empty label.";
+            return false;
+        }
+
+        if (node.IsDeleted)
+        {
+            error = $"Deleted node '{node.Label}' is still reachable.";
+            return false;
+        }
+
+        List<KeyValuePair<char, BaseNode>> children;
+        using (new LockWrapper(GetLock(node), LockType.Read))
+            children = [.. node.Children];
+
+        foreach (var (edge, child) in children)
+        {
+            if (child == null)
+            {
+                error = $"Edge '{edge}' from node '{node.Label}' points to null child.";
+                return false;
+            }
+
+            if (string.IsNullOrEmpty(child.Label))
+            {
+                error = $"Child on edge '{edge}' from node '{node.Label}' has empty label.";
+                return false;
+            }
+
+            if (child.Label[0] != edge)
+            {
+                error = $"Edge '{edge}' does not match child label '{child.Label}' under '{node.Label}'.";
+                return false;
+            }
+
+            if (!TryValidateInvariants(child, false, visited, out error))
+                return false;
+        }
+
+        return true;
     }
 
     #endregion
